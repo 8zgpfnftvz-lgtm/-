@@ -254,7 +254,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
         <li>先看<b>总览</b>：情绪阶段、涨停家数、连板高度，判断今天该进攻还是防守</li>
         <li>再看<b>模式一</b>：连板晋级率（一进二、二进三…）和各层级名单</li>
         <li><b>模式二</b>：3板+ 回调的票，横幅直接告诉你今天该不该做、有几只符合高胜率条件</li>
-        <li><b>模式三</b>：当日大阳线 + 低位温和放量的候选</li>
+        <li><b>模式三</b>：低位缩量连续小阳，分<b>核心档</b>（距高≤−20% + 量比≤1.0）和<b>放宽档</b>（距高≤−15% + 量比≤1.1，没票时用）</li>
         <li><b>竞价</b>：第二天 9:15–9:25 打开，自动判断锚定池超预期/不及预期，给开仓结论</li>
         <li><b>当日复盘</b>：一句话结论 + 次日验证点，可导出成 Markdown</li>
       </ol>
@@ -1128,13 +1128,17 @@ tbody tr:hover td .lnk{text-decoration:underline}
       if ((q.close / q.preClose - 1) * 100 > 4) return;
       if ((q.high - q.low) / q.preClose * 100 > 6) return;
       if ((q.close / a[0] - 1) * 100 > -15) return;  // 距60日高≤-15%（放宽）
-      if (a[1] && q.vol / (a[1] * 1e4) > 1.3) return;  // 量比≤1.3（放宽）
+      // 这里不再用"单日量比"预筛：形态要求的是「整段均量 ≤ 前5日均量」，某一天放量但整段仍缩量的票
+      // （例如国新能源 2026-09-30，单日 1.48 倍、整段 0.84 倍）会被误杀。预筛必须是形态的真超集。
       out.push(s);
     });
     return out;
   }
 
-  function smallYangMatch(bars) {
+  function smallYangMatch(bars, opt) {
+    opt = opt || {};
+    var volMax = opt.volMax === undefined ? 1.0 : opt.volMax;   // 形态期量比上限
+    var posMax = opt.posMax === undefined ? -20 : opt.posMax;   // 距60日高上限（越低越严）
     var n = bars.length;
     if (n < 70) return null;
     var i = n - 1;
@@ -1161,11 +1165,11 @@ tbody tr:hover td .lnk{text-decoration:underline}
       base5 /= 5;
       for (var t2 = i + 1 - nd; t2 <= i; t2++) sum += bars[t2].v;
       var vr = base5 ? (sum / nd) / base5 : null;
-      if (vr === null || vr > 1.0) continue;
+      if (vr === null || vr > volMax) continue;
       var hi60 = 0;
       for (var t3 = i - 60; t3 < i; t3++) hi60 = Math.max(hi60, bars[t3].h);
       var pos = hi60 ? (bars[i].c / hi60 - 1) * 100 : null;
-      if (pos === null || pos > -20) continue;
+      if (pos === null || pos > posMax) continue;
       var ma5 = E.maOf(bars, 5), ma10 = E.maOf(bars, 10), ma20 = E.maOf(bars, 20);
       if (!ma20 || !(bars[i].c > ma20)) continue;     // 站上20日线
       cum = (bars[i].c / bars[i - nd].c - 1) * 100;
@@ -1449,21 +1453,31 @@ tbody tr:hover td .lnk{text-decoration:underline}
         var m3 = buildMode3FromHistory(ctx.hist, ctx.snap);
         ctx.mode3days = m3.days;
         // 新模式三：低位缩量连续小阳（用刚拉的日线精确判定）
-        var m3small = [];
+        // 一档 = 核心（距高≤-20%、量比≤1.0）；二档 = 放宽（距高≤-15%、量比≤1.1），两档互不重复
+        var m3small = [], m3small2 = [];
         (ctx.m3pre || []).forEach(function (s) {
           var bars = ctx.kl[s];
           if (!bars) return;
           var r = smallYangMatch(bars);
-          if (!r) return;
-          r.symbol = s;
-          r.name = (ctx.snap[s] && ctx.snap[s].name) || s;
-          r.pct = ctx.snap[s] ? ctx.snap[s].pct : null;
-          m3small.push(r);
+          var name = (ctx.snap[s] && ctx.snap[s].name) || s;
+          var pctToday = ctx.snap[s] ? ctx.snap[s].pct : null;
+          if (r) {
+            r.symbol = s; r.name = name; r.pct = pctToday; r.tier = 1;
+            m3small.push(r);
+            return;
+          }
+          var r2 = smallYangMatch(bars, { volMax: 1.1, posMax: -15 });
+          if (r2) {
+            r2.symbol = s; r2.name = name; r2.pct = pctToday; r2.tier = 2;
+            m3small2.push(r2);
+          }
         });
-        m3small.sort(function (a, b) {
+        var smallSort = function (a, b) {
           var wa = a.days === 5 ? 0 : 1, wb = b.days === 5 ? 0 : 1;
           return wa - wb || a.days - b.days || a.vol - b.vol;
-        });
+        };
+        m3small.sort(smallSort);
+        m3small2.sort(smallSort);
         // 统一剔除 300 / 688（情绪统计不受影响）
         anchor.pool = anchor.pool.filter(function (x) { return allowed(x.symbol); });
         m2.mode2 = m2.mode2.filter(function (x) { return allowed(x.symbol); });
@@ -1472,6 +1486,8 @@ tbody tr:hover td .lnk{text-decoration:underline}
         monitor = monitor.filter(function (x) { return allowed(x.symbol); });
         m3.mode3 = m3.mode3.filter(function (x) { return allowed(x.symbol); });
         m3.near = m3.near.filter(function (x) { return allowed(x.symbol); });
+        m3small = m3small.filter(function (x) { return allowed(x.symbol); });
+        m3small2 = m3small2.filter(function (x) { return allowed(x.symbol); });
         var ztToday = ((ctx.pools[ctx.dt] || {}).zt || []).length;
         var dtToday = ((ctx.pools[ctx.dt] || {}).dt || []).length;
         var prev5 = emotion.slice(-6, -1).map(function (r) { return r.zt; });
@@ -1492,6 +1508,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
           mode3: m3.mode3,
           mode3_near: m3.near,
           mode3_small: m3small,
+          mode3_small2: m3small2,
           mode3_bigday: bigday,
           monitor: monitor,
           setups: setups,
@@ -1558,6 +1575,20 @@ function sortValue(r, col) {
   return r[col.key];
 }
 
+/* 表头排序：所有有 key 的列默认都可点（除非显式写 sortable:false） */
+function canSort(col) { return col.sortable !== false && !!col.key; }
+
+/* 没写 sortDir 时按数据本身定方向：数字默认从大到小，文字默认 A→Z */
+function defaultDir(col, rows) {
+  if (col.sortDir) return col.sortDir;
+  for (let i = 0; i < rows.length; i++) {
+    const v = sortValue(rows[i], col);
+    if (v === null || v === undefined || v === "") continue;
+    return typeof v === "string" ? 1 : -1;
+  }
+  return -1;
+}
+
 function table(id, rows, cols, opts) {
   opts = opts || {};
   const box = document.getElementById(id);
@@ -1566,7 +1597,7 @@ function table(id, rows, cols, opts) {
   let data = rows;
   if (q) data = rows.filter(r => cols.map(c => r[c.key]).join(" ").toLowerCase().includes(q));
   const st = SORT[id];
-  const active = st && cols.some(c => c.key === st.key && c.sortable);
+  const active = st && cols.some(c => c.key === st.key && canSort(c));
   if (active) {
     const col = cols.find(c => c.key === st.key);
     data = data.slice().sort((a, b) => {
@@ -1585,8 +1616,9 @@ function table(id, rows, cols, opts) {
   const head = "<thead><tr>" + cols.map(c => {
     const isOn = active && st.key === c.key;
     const arrow = isOn ? (st.dir > 0 ? " ▲" : " ▼") : "";
-    const cls = (c.num ? "n" : c.left ? "l" : "") + (c.sortable ? " sortable" + (isOn ? " on" : "") : "");
-    return '<th class="' + cls.trim() + '"' + (c.sortable ? ' data-sort="' + c.key + '"' : "") +
+    const cs = canSort(c);
+    const cls = (c.num ? "n" : c.left ? "l" : "") + (cs ? " sortable" + (isOn ? " on" : "") : "");
+    return '<th class="' + cls.trim() + '"' + (cs ? ' data-sort="' + c.key + '"' : "") +
       ">" + esc(c.label) + arrow + "</th>";
   }).join("") + "</tr></thead>";
   const body = data.map(r => "<tr" + (r.symbol ? ' data-sym="' + esc(r.symbol) + '"' : "") + ">" +
@@ -1606,7 +1638,7 @@ function table(id, rows, cols, opts) {
       if (cur && cur.key === k) {
         cur.dir = -cur.dir;
       } else {
-        SORT[id] = { key: k, dir: col.sortDir || -1 };   // 默认方向：-1 从大到小
+        SORT[id] = { key: k, dir: defaultDir(col, rows) };
       }
       table(id, rows, cols, opts);          // 用同一批数据重画
     });
@@ -1618,6 +1650,48 @@ function table(id, rows, cols, opts) {
 }
 
 /* ---------- 情绪周期图 ---------- */
+
+/* 复盘正文里由 Markdown 渲染出来的表格，也支持点表头排序 */
+function sortableMdTables(box) {
+  if (!box) return;
+  box.querySelectorAll("table").forEach(tb => {
+    const head = tb.querySelector("thead tr");
+    const body = tb.querySelector("tbody");
+    if (!head || !body || tb.dataset.sortable === "1") return;
+    tb.dataset.sortable = "1";
+    [...head.children].forEach((th, idx) => {
+      th.classList.add("sortable");
+      if (!th.dataset.label) th.dataset.label = th.textContent;
+      th.addEventListener("click", () => {
+        const dir = th.dataset.dir === "desc" ? 1 : -1;   // 再点一次反向
+        [...head.children].forEach(x => {
+          x.classList.remove("on");
+          delete x.dataset.dir;
+          if (x.dataset.label) x.textContent = x.dataset.label;
+        });
+        th.classList.add("on");
+        th.dataset.dir = dir === -1 ? "desc" : "asc";
+        th.textContent = th.dataset.label + (dir === -1 ? " ▼" : " ▲");
+        const cellVal = tr => {
+          const c = tr.children[idx];
+          if (!c) return null;
+          const s = (c.textContent || "").trim().replace(/,/g, "");
+          return /^-?\d+(\.\d+)?%?$/.test(s) ? parseFloat(s) : (s || null);
+        };
+        [...body.children].sort((a, b) => {
+          const va = cellVal(a), vb = cellVal(b);
+          const na = va === null || va === "", nb = vb === null || vb === "";
+          if (na && nb) return 0;
+          if (na) return 1;                 // 空值永远排最后
+          if (nb) return -1;
+          if (typeof va === "number" && typeof vb === "number") return dir * (va - vb);
+          return dir * String(va).localeCompare(String(vb), "zh");
+        }).forEach(r => body.appendChild(r));
+      });
+    });
+  });
+}
+
 const SERIES = [
   { id: "zt", label: "涨停家数", color: "var(--up)", type: "bar" },
   { id: "dt", label: "跌停家数", color: "var(--down)", type: "bar" },
@@ -2132,20 +2206,20 @@ function renderM2() {
   if (ad.sections && ad.sections.length) {
     let h = "<h3>胜率对照表（样本 " + ad.samples + " 个，" + ad.range[0] + " ~ " + ad.range[1] +
       "，均为“金叉后买入”实测）</h3>";
-    ad.sections.forEach(s => {
+    ad.sections.forEach((s, i) => {
       h += "<div class='k' style='margin-top:10px'><b>" + esc(s.title) + "</b></div>" +
-        "<div class='panel'><table><thead><tr><th class='l'>规则 / 条件</th><th class='n'>样本</th>" +
-        "<th class='n'>胜率</th><th class='n'>均值</th><th class='n'>中位</th><th class='n'>盈亏比</th></tr></thead><tbody>";
-      s.rows.forEach(r => {
-        const mark = (r.avg >= 1.5 && r.n >= 15) ? " style='font-weight:600'" : "";
-        h += "<tr" + mark + "><td class='l'>" + esc(r.label) + "</td><td class='n'>" + r.n +
-          "</td><td class='n'>" + num(r.win, 1) + "%</td><td class='n " + cls(r.avg) + "'>" + pct(r.avg) +
-          "</td><td class='n " + cls(r.med) + "'>" + pct(r.med) + "</td><td class='n'>" +
-          (r.pf === null ? "-" : num(r.pf, 2)) + "</td></tr>";
-      });
-      h += "</tbody></table></div>";
+        "<div class='panel'><table id='adv_s" + i + "'></table></div>";
     });
     $("#m2body").innerHTML += h;
+    const ADVCOLS = [
+      { key: "label", label: "规则 / 条件", left: true },
+      { key: "n", label: "样本", num: true, render: r => String(r.n) },
+      { key: "win", label: "胜率", num: true, render: r => num(r.win, 1) + "%" },
+      { key: "avg", label: "均值", num: true, cls: r => cls(r.avg), render: r => pct(r.avg) },
+      { key: "med", label: "中位", num: true, cls: r => cls(r.med), render: r => pct(r.med) },
+      { key: "pf", label: "盈亏比", num: true, render: r => r.pf === null || r.pf === undefined ? "-" : num(r.pf, 2) },
+    ];
+    ad.sections.forEach((s, i) => table("adv_s" + i, s.rows, ADVCOLS));
   }
 }
 
@@ -2233,6 +2307,7 @@ const M3COLS = [
 function renderM3() {
   const all = DATA.mode3, near = DATA.mode3_near, bigday = DATA.mode3_bigday || [];
   const small = DATA.mode3_small || [];
+  const small2 = DATA.mode3_small2 || [];        // 放宽档：距高≤-15% + 量比≤1.1
   const cats = {};
   all.forEach(r => (cats[r.cat] = cats[r.cat] || []).push(r));
   const hot = all.filter(r => r.pos === "低位启动" && (r.big_vol_ratio || 99) < 1.5);
@@ -2244,6 +2319,8 @@ function renderM3() {
     card("低位缩量连续小阳", String(small.length) + " 只",
       "其中连5阳（最优买点）" + small.filter(r => r.days === 5).length + " 只",
       small.length ? "up" : "") +
+    card("放宽档（备选）", String(small2.length) + " 只",
+      "距高≤−15% + 量比≤1.1，实测次日胜率 57%", small2.length ? "up" : "") +
     card("当日大阳线", String(bigday.length) + " 只", "其中低位温和放量 " + hotDay.length + " 只") +
     card("精筛（低位+温和量）", String(hot.length) + " 只", "本模式唯一站得住的子集") +
     (b3hot.length
@@ -2262,9 +2339,15 @@ function renderM3() {
 
   const q = $("#q3").value;
   const order = ["A_强势碎步整理", "B_温和回踩未破大阳", "C_回补大阳线(偏弱)"];
-  let html = "<h3>① 新形态 · 低位缩量连续小阳（" + small.length + " 只，连5阳最优）</h3>" +
+  let html = "<h3>① 核心档 · 低位缩量连续小阳（" + small.length + " 只，连5阳最优）</h3>" +
     "<div class='panel'><table id='m3_small'></table></div>" +
-    "<h3>② 当日大阳线（" + bigday.length + " 只，旧口径参考）</h3>" +
+    "<div class='k' style='margin:6px 0 10px'>条件：连续 4~6 根小阳（每日收阳、涨幅≤4%、振幅≤6%、重心抬高）＋ 形态期量比≤1.0 ＋ 距60日高≤−20% ＋ 站上 MA20。" +
+    "两条都去掉的话胜率会掉到 48%（等于没有优势），所以这两条不是可选项。</div>" +
+    "<h3>② 放宽档 · 条件放松后的备选（" + small2.length + " 只，与核心档不重复）</h3>" +
+    "<div class='panel'><table id='m3_small2'></table></div>" +
+    "<div class='k' style='margin:6px 0 10px'>条件：其余不变，只把「距60日高≤−20%」放到 ≤−15%、「量比≤1.0」放到 ≤1.1。" +
+    "样本从 744 增到 1284，次日胜率 57.3%（核心档 60.5%）——<b>没票时用这一档，不要取消条件</b>。</div>" +
+    "<h3>③ 当日大阳线（" + bigday.length + " 只，旧口径参考）</h3>" +
     "<div class='panel'><table id='m3_bigday'></table></div>";
   order.forEach((c, i) => {
     if (!cats[c]) return;
@@ -2274,7 +2357,7 @@ function renderM3() {
   html += "<h3>截至最后一个交易日的实盘观察（大阳线 " + esc(near[0] ? near[0].big_date : "-") +
     "，严格形态 " + strictNow.length + " 只）</h3><div class='panel'><table id='m3_near'></table></div>";
   $("#m3body").innerHTML = html;
-  table("m3_small", small, [
+  const M3SCOLS = [
     { key: "symbol", label: "代码", left: true },
     { key: "name", label: "名称", left: true },
     { key: "days", label: "连续阳线", num: true, sortable: true, render: r => r.days + " 根" },
@@ -2286,7 +2369,10 @@ function renderM3() {
     { key: "pct", label: "当日涨跌", num: true, sortable: true, cls: r => cls(r.pct), render: r => pct(r.pct) },
     { key: "ma20", label: "MA20", num: true, render: r => num(r.ma20) },
     { key: "ma5_up", label: "MA5>MA10", num: true, render: r => r.ma5_up ? "是" : "否" },
-  ], { filter: q, sort: (a, b) => (a.days === 5 ? 0 : 1) - (b.days === 5 ? 0 : 1) || a.days - b.days });
+  ];
+  const smallSort = (a, b) => (a.days === 5 ? 0 : 1) - (b.days === 5 ? 0 : 1) || a.days - b.days;
+  table("m3_small", small, M3SCOLS, { filter: q, sort: smallSort });
+  table("m3_small2", small2, M3SCOLS, { filter: q, sort: smallSort });
   table("m3_bigday", bigday, [
     { key: "symbol", label: "代码", left: true },
     { key: "name", label: "名称", left: true },
@@ -2674,6 +2760,7 @@ function applyData(payload) {
     (INLINE ? " · 静态快照" : "");
   renderOverview(); renderM1(); renderM2(); renderM3();
   $("#opinion").innerHTML = mdToHtml(DATA.opinion);
+  sortableMdTables($("#opinion"));
   drawLegend(); drawChart();
   // 把锚定池单独存一份，供第二个交易日早上的「竞价」页使用。
   // 关键：盘中跑到的是"当天不完整的池子"，绝不能覆盖上一交易日的完整池子，
