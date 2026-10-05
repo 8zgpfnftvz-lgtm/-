@@ -1,7 +1,7 @@
 // 潜庐复盘 · Service Worker
 // 策略：网络优先，失败时回退缓存 —— 保证联网时永远是最新版，断网时还能打开。
 // 不做安装期预缓存，避免 install 阶段因某个文件 404 而整体失败。
-const CACHE = 'qianlu-v3';
+const CACHE = 'qianlu-v4';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => {
