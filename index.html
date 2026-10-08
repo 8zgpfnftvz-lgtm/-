@@ -49,7 +49,11 @@ section[hidden],div[hidden]{display:none}
 .v.s{font-size:16px}
 .up{color:var(--up)} .down{color:var(--down)}
 h2{font-size:15px;margin:22px 0 10px;font-weight:600}
-h3{font-size:14px;margin:18px 0 8px;font-weight:600;color:var(--muted)}
+h3{font-size:14px;margin:18px 0 8px;font-weight:600;color:var(--muted);cursor:pointer;user-select:none}
+h3:hover{color:var(--fg)}
+h3::before{content:"▾ ";opacity:.7}
+h3.folded::before{content:"▸ ";opacity:.9}
+h3.folded{color:var(--accent)}
 .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;
   overflow-x:auto}
 th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
@@ -244,13 +248,15 @@ tbody tr:hover td .lnk{text-decoration:underline}
     <input type="search" id="wpInput" placeholder="6位代码，如 113046 / 600519">
     <button type="button" id="wpAddBtn">加入自选</button>
     <button type="button" id="wpRefresh">刷新行情</button>
+    <button type="button" id="wpExport">导出</button>
     <button type="button" id="wpClear">清空</button>
     <span class="k" id="wpInfo"></span>
   </div>
   <div class="panel"><table id="t_wp"></table></div>
   <div class="k" style="margin-top:10px">
-    <b>只手动加</b>：输入 6 位代码（如 113046 / 600519），回车或点「加入自选」。
-    「刷新行情」拉现价和涨跌；点任意一行看该股<b>日线图 / 分时图</b>（弹窗左上角可切换）。
+    <b>手动加</b>：输入 6 位代码（如 113046 / 600519），回车或点「加入自选」，支持一次粘多个（逗号/空格分隔）。
+    <b>自动加</b>：只对模式三的两张表生效——「①碎步小阳·完整形态」和「③放量突破」，每次更新数据时自动进池。<br>
+    「刷新行情」拉现价和涨跌；点任意一行看该股<b>日线图 / 分时图</b>（弹窗里可「上一个 / 下一个」翻，也能用键盘 ← →）。
   </div>
 </section>
 
@@ -305,6 +311,9 @@ tbody tr:hover td .lnk{text-decoration:underline}
         <div class="k" id="dlgTags"></div>
       </div>
       <div class="seg" id="dlgRange">
+        <button type="button" id="dlgPrev">‹ 上一个</button>
+        <button type="button" id="dlgNext">下一个 ›</button>
+        <span class="k" id="dlgPos" style="padding:0 6px"></span>
         <button type="button" id="dlgFav">＋ 自选</button>
         <button type="button" data-n="min">分时</button>
         <button type="button" data-n="60">60日</button>
@@ -1197,7 +1206,14 @@ tbody tr:hover td .lnk{text-decoration:underline}
       lo = Math.min(lo, bars[j].l);
       hi = Math.max(hi, bars[j].h);
     }
-    if (!(lo < Infinity) || lo < bo) return null;    // 不跌破大阳线开盘价
+    if (!(lo < Infinity) || lo < bo * 0.995) return null;   // 不跌破大阳线开盘价（留 0.5% 容差）
+    /* 横盘箱体：大阳线之后到「昨天」为止的最高/最低（不含今天） */
+    var boxHi = -Infinity, boxLo = Infinity;
+    for (var b2 = B + 1; b2 <= T - 1; b2++) {
+      boxHi = Math.max(boxHi, bars[b2].h);
+      boxLo = Math.min(boxLo, bars[b2].l);
+    }
+    var hasBox = boxHi > -Infinity;
     var small = 0, cum = 0;                          // 连续碎步小阳（从最后一根往前数）
     for (var k = T; k > B; k--) {
       var b = bars[k], pc = bars[k - 1].c;
@@ -1209,15 +1225,25 @@ tbody tr:hover td .lnk{text-decoration:underline}
     }
     if (small > 0) cum = (bars[T].c / bars[T - small].c - 1) * 100;
     var v5 = E.avgVolOf(bars, 5, T - 1);
+    var vr = (v5 && bars[T].v) ? bars[T].v / v5 : null;
+    var cur = bars[T].c;
     return {
       big_date: bars[B].date, big_pct: +bigPct.toFixed(2),
       big_open: +bo.toFixed(2), big_close: +bc.toFixed(2),
       days_since_big: T - B,
+      flat_days: (T - 1) - B,                        // 大阳线之后已经横盘多少个交易日
+      box_hi: hasBox ? +boxHi.toFixed(2) : null,
+      box_lo: hasBox ? +boxLo.toFixed(2) : null,
+      box_amp: hasBox ? +((boxHi - boxLo) / boxLo * 100).toFixed(1) : null,
+      to_box_hi: hasBox ? +((cur / boxHi - 1) * 100).toFixed(1) : null,
+      in_box: hasBox ? cur <= boxHi : false,
+      breakout: hasBox ? (cur > boxHi && cur > bars[T].o) : false,
+      break_pct: hasBox ? +((cur / boxHi - 1) * 100).toFixed(1) : null,
       low_vs_open: +((lo / bo - 1) * 100).toFixed(1),
       hi_vs_close: +((hi / bc - 1) * 100).toFixed(1),
       small_days: small, cum: +cum.toFixed(2),
       close: +bars[T].c.toFixed(2),
-      vol_ratio: (v5 && bars[T].v) ? +(bars[T].v / v5).toFixed(2) : null
+      vol_ratio: vr ? +vr.toFixed(2) : null
     };
   }
 
@@ -1529,9 +1555,11 @@ tbody tr:hover td .lnk{text-decoration:underline}
         var arcs = buildArcs(window.__ARC__, window.__ARC_DATE__, ctx.hist, ctx.snap);
         var m3 = buildMode3FromHistory(ctx.hist, ctx.snap);
         ctx.mode3days = m3.days;
-        // 模式三：30日内大阳线 + 不破开盘价（企稳）+ 连续碎步小阳
-        // 一档 = 已经走出碎步小阳（>=3根）；二档 = 已企稳但小阳还不够（0~2根，观察）
-        var m3small = [], m3base = [];
+        // 模式三（宏柏新材 2026-08-06~09-24 那种）：
+        //   ① 碎步小阳：大阳线 → 横盘不破开盘价 → 连续小阳 ≥3 根
+        //   ② 横盘中：大阳线后横盘 ≥10 个交易日、仍在箱体内（潜伏，等突破）
+        //   ③ 放量突破：今天放量（≥1.5倍）收阳、收盘突破前期横盘箱体上沿 = 买点
+        var m3small = [], m3flat = [], m3break = [];
         (ctx.m3pre || []).forEach(function (s) {
           var bars = ctx.kl[s];
           if (!bars) return;
@@ -1540,15 +1568,18 @@ tbody tr:hover td .lnk{text-decoration:underline}
           var name = (ctx.snap[s] && ctx.snap[s].name) || s;
           var pctToday = ctx.snap[s] ? ctx.snap[s].pct : null;
           r.symbol = s; r.name = name; r.pct = pctToday;
-          if (r.small_days >= 3) {
+          if (r.breakout && r.vol_ratio !== null && r.vol_ratio >= 1.5) {
+            m3break.push(r);
+          } else if (r.small_days >= 3) {
             m3small.push(r);
-          } else {
-            m3base.push(r);
+          } else if (r.in_box && r.flat_days >= 10) {
+            m3flat.push(r);
           }
         });
         var smallSort = function (a, b) { return b.small_days - a.small_days || a.days_since_big - b.days_since_big; };
         m3small.sort(smallSort);
-        m3base.sort(smallSort);
+        m3flat.sort(function (a, b) { return b.flat_days - a.flat_days || (a.box_amp || 99) - (b.box_amp || 99); });
+        m3break.sort(function (a, b) { return (b.vol_ratio || 0) - (a.vol_ratio || 0); });
         // 统一剔除 300 / 688（情绪统计不受影响）
         anchor.pool = anchor.pool.filter(function (x) { return allowed(x.symbol); });
         m2.mode2 = m2.mode2.filter(function (x) { return allowed(x.symbol); });
@@ -1558,7 +1589,8 @@ tbody tr:hover td .lnk{text-decoration:underline}
         m3.mode3 = m3.mode3.filter(function (x) { return allowed(x.symbol); });
         m3.near = m3.near.filter(function (x) { return allowed(x.symbol); });
         m3small = m3small.filter(function (x) { return allowed(x.symbol); });
-        m3base = m3base.filter(function (x) { return allowed(x.symbol); });
+        m3flat = m3flat.filter(function (x) { return allowed(x.symbol); });
+        m3break = m3break.filter(function (x) { return allowed(x.symbol); });
         var ztToday = ((ctx.pools[ctx.dt] || {}).zt || []).length;
         var dtToday = ((ctx.pools[ctx.dt] || {}).dt || []).length;
         var prev5 = emotion.slice(-6, -1).map(function (r) { return r.zt; });
@@ -1579,7 +1611,8 @@ tbody tr:hover td .lnk{text-decoration:underline}
           mode3: m3.mode3,
           mode3_near: m3.near,
           mode3_small: m3small,
-          mode3_base: m3base,
+          mode3_flat: m3flat,
+          mode3_break: m3break,
           mode3_bigday: bigday,
           monitor: monitor,
           arc_bottom: arcs,
@@ -1640,6 +1673,32 @@ function winRate(a) { a = a.filter(x => x !== null && x !== undefined && !isNaN(
 
 /* ---------- 表格渲染 ---------- */
 const SORT = {};   // {tableId: {key, dir}}  记住每张表当前的排序
+
+/* ---------- 折叠：点 h3 标题收起/展开它下面的表格块（状态记在本机） ---------- */
+let FOLD = [];
+try { FOLD = JSON.parse(localStorage.getItem("foldH3") || "[]"); } catch (e) { FOLD = []; }
+function foldKey(h){ return h.textContent.trim().replace(/[▾▸]\s*/g, "").slice(0, 40); }
+function applyFold(){
+  document.querySelectorAll("h3").forEach(h => {
+    const k = foldKey(h);
+    const on = FOLD.indexOf(k) >= 0;
+    h.classList.toggle("folded", on);
+    h.setAttribute("title", on ? "点一下展开" : "点一下收起");
+    let n = h.nextElementSibling;
+    while (n && n.tagName !== "H3") { n.hidden = on; n = n.nextElementSibling; }
+  });
+}
+function toggleFold(h){
+  const k = foldKey(h);
+  const i = FOLD.indexOf(k);
+  if (i >= 0) FOLD.splice(i, 1); else FOLD.push(k);
+  try { localStorage.setItem("foldH3", JSON.stringify(FOLD)); } catch (e) { }
+  applyFold();
+}
+document.addEventListener("click", e => {
+  const h = e.target.closest("h3");
+  if (h) toggleFold(h);
+});
 
 function sortValue(r, col) {
   if (col.sortVal) return col.sortVal(r);
@@ -2351,6 +2410,21 @@ function wpDel(sym){
   wpSave(wpLoad().filter(x => x.sym !== sym));
   renderWatch();
 }
+/* 只对模式三的两张表自动加自选：碎步小阳（完整形态）、放量突破 */
+function wpAutoFromM3(){
+  if (!DATA) return 0;
+  let n = 0;
+  (DATA.mode3_small || []).forEach(r => {
+    if (wpAdd(r.symbol, r.name, "模式三·碎步小阳",
+      "大阳" + r.big_date + " · 横盘" + r.flat_days + "日 · 连" + r.small_days + "根小阳", false)) n++;
+  });
+  (DATA.mode3_break || []).forEach(r => {
+    if (wpAdd(r.symbol, r.name, "模式三·放量突破",
+      "放量" + num(r.vol_ratio, 2) + "倍突破箱体上沿" + num(r.box_hi) + "（横盘" + r.flat_days + "日）", false)) n++;
+  });
+  if (n) { try { renderWatch(); } catch (e) { /* 忽略 */ } }
+  return n;
+}
 /* 自选池改为纯手动添加（原自动收集逻辑已移除） */
 const WPCOLS = [
   { key: "symbol", label: "代码", left: true },
@@ -2366,8 +2440,10 @@ const WPCOLS = [
 function renderWatch(){
   const list = wpLoad();
   $("#wpCards").innerHTML =
-    card("自选池", String(list.length) + " 只", "全部是手动添加，自己维护") +
-    card("看日线图 / 分时图", "点任意一行", "弹窗左上角切换：分时 / 60日 / 90日 / 全部");
+    card("自选池", String(list.length) + " 只",
+      "手动添加 + 自动（碎步小阳／放量突破）") +
+    card("看日线图 / 分时图", "点任意一行",
+      "弹窗里可「上一个 / 下一个」翻，键盘 ← → 也行");
   // 行里字段叫 sym，表格按 symbol 认列/绑 data-sym（点行看图），这里补一个
   const rows = list.map(x => Object.assign({}, x, { symbol: x.sym }));
   table("t_wp", rows, WPCOLS, {
@@ -2516,28 +2592,38 @@ const M3COLS = [
 function renderM3() {
   const bigday = DATA.mode3_bigday || [];
   const small = DATA.mode3_small || [];          // ① 已走出碎步小阳（连续>=3根）
-  const base = DATA.mode3_base || [];            // ② 已企稳，还没走出碎步小阳
+  const flat = DATA.mode3_flat || [];            // ② 大阳线后横盘中（潜伏）
+  const brk = DATA.mode3_break || [];            // ③ 放量突破箱体上沿（买点）
   const q = $("#q3").value;
   $("#m3stats").innerHTML =
     card("碎步小阳（完整命中）", String(small.length) + " 只",
       "大阳线 → 横盘不破开盘价 → 连续小阳 ≥3 根", small.length ? "up" : "") +
-    card("已企稳·等碎步小阳", String(base.length) + " 只",
-      "大阳线后没破开盘价，小阳还没连起来（观察）") +
+    card("横盘中（潜伏）", String(flat.length) + " 只",
+      "大阳线后横盘 ≥10 日、仍在箱体里（宏柏新材 8/6~9/23 那种）") +
+    card("放量突破（买点）", String(brk.length) + " 只",
+      "收阳 + 放量 ≥1.5 倍 + 收盘突破箱体上沿", brk.length ? "up" : "") +
     card("当日大阳线", String(bigday.length) + " 只", "今天刚收出大阳（起点池）");
   let html =
     "<h3>① 碎步小阳 · 完整形态（" + small.length + " 只）</h3>" +
     "<div class='panel'><table id='m3_small'></table></div>" +
     "<div class='k' style='margin:-4px 0 10px'>" +
     "口径：<b>最近 30 个交易日内</b>出现过大阳线（涨幅 ≥5% 且收阳）→ 之后<b>横盘不跌破大阳线开盘价</b>（企稳）" +
-    "→ 在企稳基础上连续收出小阳（收阳、单日涨幅 ≤4%、振幅 ≤6%、收盘重心逐日抬高）。" +
-    "大阳线是起点，企稳是前提，小阳是触发。<br>" +
+    "→ 在横盘基础上连续收出小阳（收阳、单日涨幅 ≤4%、振幅 ≤6%、收盘重心逐日抬高）。<br>" +
     "<b>5 年实测</b>（2021-10~2026-09，信号日收盘买入）：小阳 ≥3 根 n=5617、5日 +0.64%／胜率 48.9%、" +
     "10日 <b>+1.04%／51.1%</b>；小阳 ≥4 根更好：10日 +1.09%／<b>53.2%</b>。" +
     "次日胜率只有 45.6%——这个形态<b>不是隔日就跑</b>，给它 5~10 个交易日。</div>" +
-    "<h3>② 已企稳 · 等碎步小阳（" + base.length + " 只）</h3>" +
-    "<div class='panel'><table id='m3_base'></table></div>" +
-    "<div class='k' style='margin:-4px 0 10px'>大阳线之后没跌破开盘价，但目前小阳还没连到 3 根——提前盯，等它连起来。</div>" +
-    "<h3>③ 当日大阳线（今天收出大阳的票 " + bigday.length + " 只 · 强势股池／形态起点参考）</h3>" +
+    "<h3>② 横盘中 · 大阳线后长期横盘、还没突破（" + flat.length + " 只 · 潜伏名单）</h3>" +
+    "<div class='panel'><table id='m3_flat'></table></div>" +
+    "<div class='k' style='margin:-4px 0 10px'>" +
+    "借鉴<b>宏柏新材 2026-08-06 ~ 09-23</b>：大阳线（+10%）之后横盘约 30 个交易日，箱体 7.47~8.78，" +
+    "一路缩量、最低点始终贴住大阳线开盘价 7.48 不破，9/24 放量 2.4 倍突破箱体上沿才启动。" +
+    "这里的票就是<b>还在箱体里、等待放量突破</b>的那些——盯住它，等③出现。</div>" +
+    "<h3>③ 放量突破 · 收阳 + 放量 ≥1.5 倍 + 收盘突破箱体上沿（" + brk.length + " 只 · 买点）</h3>" +
+    "<div class='panel'><table id='m3_break'></table></div>" +
+    "<div class='k' style='margin:-4px 0 10px'>" +
+    "箱体上沿＝大阳线之后（不含今天）的最高价。突破当天的量比 ≥1.5 倍且收阳才算数——" +
+    "宏柏新材 9/24 就是这一天（量比 2.42、收 +5.37%）。<b>缩量突破不算</b>，容易假突破。</div>" +
+    "<h3>④ 当日大阳线（今天收出大阳的票 " + bigday.length + " 只 · 强势股池／形态起点参考）</h3>" +
     "<div class='panel'><table id='m3_bigday'></table></div>" +
     "<div class='k' style='margin:-4px 0 10px'>" +
     "口径：<b>最近一个交易日</b>（盘中就是此刻实时，收盘后就是今天收盘）涨幅 <b>≥5%</b>、实体（收−开）/开 <b>≥3%</b> 且收阳。" +
@@ -2560,8 +2646,39 @@ function renderM3() {
     { key: "vol_ratio", label: "量比", num: true, render: r => num(r.vol_ratio) },
     { key: "close", label: "现价", num: true, render: r => num(r.close) },
   ];
+  /* ② 横盘中：看横盘多久、箱体多宽、离上沿多远 */
+  const M3FLAT = [
+    { key: "symbol", label: "代码", left: true },
+    { key: "name", label: "名称", left: true },
+    { key: "big_date", label: "大阳日", left: true },
+    { key: "pct", label: "今日涨跌", num: true, cls: r => cls(r.pct), render: r => pct(r.pct) },
+    { key: "big_pct", label: "大阳涨幅", num: true, cls: () => "up", render: r => num(r.big_pct, 1) + "%" },
+    { key: "flat_days", label: "横盘天数", num: true, render: r => r.flat_days + " 日" },
+    { key: "box_amp", label: "箱体振幅", num: true, render: r => num(r.box_amp, 1) + "%" },
+    { key: "box_hi", label: "箱体上沿", num: true, render: r => num(r.box_hi) },
+    { key: "box_lo", label: "箱体下沿", num: true, render: r => num(r.box_lo) },
+    { key: "close", label: "现价", num: true, render: r => num(r.close) },
+    { key: "to_box_hi", label: "距上沿", num: true, cls: r => cls(r.to_box_hi), render: r => pct(r.to_box_hi, 1) },
+    { key: "low_vs_open", label: "最低距大阳开盘", num: true, cls: r => cls(r.low_vs_open), render: r => pct(r.low_vs_open, 1) },
+    { key: "vol_ratio", label: "量比", num: true, render: r => num(r.vol_ratio) },
+  ];
+  /* ③ 放量突破 */
+  const M3BRK = [
+    { key: "symbol", label: "代码", left: true },
+    { key: "name", label: "名称", left: true },
+    { key: "big_date", label: "大阳日", left: true },
+    { key: "pct", label: "今日涨跌", num: true, cls: r => cls(r.pct), render: r => pct(r.pct) },
+    { key: "vol_ratio", label: "今日量比", num: true, cls: () => "up", render: r => num(r.vol_ratio) },
+    { key: "box_hi", label: "突破的箱体上沿", num: true, render: r => num(r.box_hi) },
+    { key: "close", label: "收盘", num: true, render: r => num(r.close) },
+    { key: "break_pct", label: "突破幅度", num: true, cls: r => cls(r.break_pct), render: r => pct(r.break_pct, 1) },
+    { key: "flat_days", label: "横盘天数", num: true, render: r => r.flat_days + " 日" },
+    { key: "big_pct", label: "大阳涨幅", num: true, render: r => num(r.big_pct, 1) + "%" },
+    { key: "small_days", label: "连续小阳", num: true, render: r => r.small_days + " 根" },
+  ];
   table("m3_small", small, M3NEW, { filter: q, sort: (a, b) => b.small_days - a.small_days });
-  table("m3_base", base, M3NEW, { filter: q, sort: (a, b) => a.days_since_big - b.days_since_big });
+  table("m3_flat", flat, M3FLAT, { filter: q, sort: (a, b) => b.flat_days - a.flat_days });
+  table("m3_break", brk, M3BRK, { filter: q, sort: (a, b) => (b.vol_ratio || 0) - (a.vol_ratio || 0) });
   table("m3_bigday", bigday, [
     { key: "symbol", label: "代码", left: true },
     { key: "name", label: "名称", left: true },
@@ -2574,8 +2691,9 @@ function renderM3() {
     { key: "above_ma5", label: "站上5日线", num: true, render: r => r.above_ma5 === null || r.above_ma5 === undefined ? "-" : (r.above_ma5 ? "是" : "否") },
     { key: "above_ma20", label: "站上20日线", num: true, render: r => r.above_ma20 === null || r.above_ma20 === undefined ? "-" : (r.above_ma20 ? "是" : "否") },
   ], { filter: q, sort: (a, b) => b.pct - a.pct });
-  $("#q3info").textContent = "碎步小阳 " + small.length + " 只 · 已企稳 " + base.length +
-    " 只 · 当日大阳线 " + bigday.length + " 只";
+  $("#q3info").textContent = "碎步小阳 " + small.length + " 只 · 横盘中 " + flat.length +
+    " 只 · 放量突破 " + brk.length + " 只 · 当日大阳线 " + bigday.length + " 只";
+  applyFold();
 }
 
 /* ---------- Markdown ---------- */
@@ -2741,6 +2859,7 @@ async function openStock(symbol, pushHash) {
   [...$("#dlgRange").querySelectorAll("button[data-n]")].forEach(x =>
     x.classList.toggle("on", x.dataset.n === "90"));
   updateFavBtn();
+  updateNav();
   $("#dlg").hidden = false;
   // 注意：必须用 innerHTML 重建，textContent 会把里面的 #dlgCode 一起删掉
   $("#dlgTitle").innerHTML = '加载中…<span class="code" id="dlgCode">' + esc(symbol) + "</span>";
@@ -3092,6 +3211,8 @@ function applyData(payload) {
   renderOverview(); renderM1(); renderM2(); renderM3();
   try { renderMonitor(); } catch (e) { /* 监控数据缺失时不影响其它页 */ }
   try { renderWatch(); } catch (e) { /* 自选池异常不影响其它页 */ }
+  try { wpAutoFromM3(); } catch (e) { /* 自动加自选失败不影响其它页 */ }
+  try { applyFold(); } catch (e) { /* 折叠状态应用失败不影响其它功能 */ }
   $("#opinion").innerHTML = mdToHtml(DATA.opinion);
   sortableMdTables($("#opinion"));
   drawLegend(); drawChart();
@@ -3230,7 +3351,8 @@ $("#tabs").addEventListener("click", e => {
   if (b.dataset.tab === "overview") drawChart();
   if (b.dataset.tab === "auction") loadAuction();
   if (b.dataset.tab === "monitor") renderMonitor();
-  if (b.dataset.tab === "watch") { renderWatch(); }
+  if (b.dataset.tab === "watch") { wpAutoFromM3(); renderWatch(); }
+  applyFold();
 });
 
 document.querySelectorAll(".monF").forEach(b => b.addEventListener("click", () => {
@@ -3248,12 +3370,14 @@ document.querySelectorAll(".arcF").forEach(b => b.addEventListener("click", () =
 $("#wpAddBtn").addEventListener("click", () => {
   const v = ($("#wpInput").value || "").trim();
   if (!v) return;
-  if (wpAdd(v, "", "手动", "手动加入", true)) {
-    $("#wpInput").value = "";
-    wpQuotes();
-  } else {
-    alert("请输入 6 位代码，例如 113046 或 600519");
-  }
+  // 支持一次粘多个：逗号 / 空格 / 换行 / 顿号 分隔
+  const codes = v.split(/[\s,，、;；]+/).filter(Boolean);
+  let ok = 0;
+  codes.forEach(c => { if (wpAdd(c, "", "手动", "手动加入", true)) ok++; });
+  if (!ok) { alert("请输入 6 位代码，例如 113046 或 600519（可以一次粘多个，用逗号或空格隔开）"); return; }
+  $("#wpInput").value = "";
+  $("#wpInfo").textContent = "已加入 " + ok + " 只";
+  wpQuotes();
 });
 $("#wpInput").addEventListener("keydown", e => { if (e.key === "Enter") $("#wpAddBtn").click(); });
 $("#wpRefresh").addEventListener("click", wpQuotes);
@@ -3262,8 +3386,50 @@ $("#wpClear").addEventListener("click", () => {
   wpSave([]);
   renderWatch();
 });
+/* 导出：把代码列进输入框，能复制就顺手复制到剪贴板（换设备时粘回去一键恢复） */
+$("#wpExport").addEventListener("click", async () => {
+  const list = wpLoad();
+  if (!list.length) { alert("自选池是空的"); return; }
+  const txt = list.map(x => x.sym).join(",");
+  $("#wpInput").value = txt;
+  let copied = false;
+  try { await navigator.clipboard.writeText(txt); copied = true; } catch (e) { copied = false; }
+  $("#wpInput").focus(); $("#wpInput").select();
+  $("#wpInfo").textContent = copied
+    ? "已复制 " + list.length + " 个代码到剪贴板（也填进了输入框）"
+    : "已填入输入框（长按复制）：" + list.length + " 个代码";
+  if (!copied) alert("已把 " + list.length + " 个代码填进输入框，长按全选复制即可备份");
+});
 
 /* 看图弹窗里的「＋ 自选」（点一下加入 / 再点一下移出） */
+/* ---------- 弹窗里的「上一个 / 下一个」：按你点进来的那张表的顺序翻 ---------- */
+let NAV = { list: [], idx: -1 };
+function navSetFromRow(tr){
+  const table = tr.closest("table");
+  const syms = table
+    ? Array.from(table.querySelectorAll("tbody tr[data-sym]")).map(x => x.dataset.sym)
+    : [];
+  if (!syms.length) { NAV = { list: [tr.dataset.sym], idx: 0 }; return; }
+  NAV = { list: syms, idx: Math.max(0, syms.indexOf(tr.dataset.sym)) };
+}
+function navGo(step){
+  if (!NAV.list.length) return;
+  NAV.idx = (NAV.idx + step + NAV.list.length) % NAV.list.length;
+  openStock(NAV.list[NAV.idx]);
+}
+function updateNav(){
+  const pos = $("#dlgPos");
+  if (!pos) return;
+  const n = NAV.list.length;
+  pos.textContent = n > 1 ? (NAV.idx + 1) + " / " + n : "";
+  ["#dlgPrev", "#dlgNext"].forEach(s => { const b = $(s); if (b) b.disabled = n < 2; });
+}
+document.addEventListener("keydown", e => {
+  if ($("#dlg").hidden) return;
+  if (e.key === "ArrowLeft") { e.preventDefault(); navGo(-1); }
+  if (e.key === "ArrowRight") { e.preventDefault(); navGo(1); }
+});
+
 function wpHas(sym){ return wpLoad().some(x => x.sym === sym); }
 function updateFavBtn(){
   const b = $("#dlgFav");
@@ -3303,8 +3469,10 @@ document.addEventListener("click", e => {
   if (e.target.closest("#dlgClose")) { closeStock(); return; }
   if (e.target.id === "help") { $("#help").hidden = true; return; }
   if (e.target.closest("#helpClose")) { $("#help").hidden = true; return; }
+  if (e.target.closest("#dlgPrev")) { navGo(-1); return; }
+  if (e.target.closest("#dlgNext")) { navGo(1); return; }
   const tr = e.target.closest("tr[data-sym]");
-  if (tr && e.target.closest("td")) { openStock(tr.dataset.sym); }
+  if (tr && e.target.closest("td")) { navSetFromRow(tr); openStock(tr.dataset.sym); }
 });
 
 $("#btnHelp").addEventListener("click", () => { $("#help").hidden = false; });
