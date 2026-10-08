@@ -54,6 +54,19 @@ h3:hover{color:var(--fg)}
 h3::before{content:"▾ ";opacity:.7}
 h3.folded::before{content:"▸ ";opacity:.9}
 h3.folded{color:var(--accent)}
+/* 图两侧的半透明翻页箭头 */
+.chart-wrap{position:relative}
+.navArrow{position:absolute;top:50%;transform:translateY(-50%);z-index:4;
+  width:34px;height:72px;padding:0;line-height:1;font-size:24px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--fg);background:rgba(140,150,170,.20);
+  border:1px solid rgba(140,150,170,.32);border-radius:10px;
+  opacity:.55;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+.navArrow:hover{opacity:.95}
+.navArrow:active{opacity:1}
+.navArrow:disabled{opacity:.12;cursor:default}
+.navArrow.left{left:4px}
+.navArrow.right{right:4px}
 .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;
   overflow-x:auto}
 th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
@@ -311,8 +324,6 @@ tbody tr:hover td .lnk{text-decoration:underline}
         <div class="k" id="dlgTags"></div>
       </div>
       <div class="seg" id="dlgRange">
-        <button type="button" id="dlgPrev">‹ 上一个</button>
-        <button type="button" id="dlgNext">下一个 ›</button>
         <span class="k" id="dlgPos" style="padding:0 6px"></span>
         <button type="button" id="dlgFav">＋ 自选</button>
         <button type="button" data-n="min">分时</button>
@@ -323,7 +334,11 @@ tbody tr:hover td .lnk{text-decoration:underline}
       </div>
     </div>
     <div class="ma-legend" id="dlgMa"></div>
-    <div class="chart" id="dlgChart"><div class="tip" id="dlgTip"></div></div>
+    <div class="chart-wrap">
+      <button type="button" class="navArrow left" id="dlgPrev" aria-label="上一个">‹</button>
+      <div class="chart" id="dlgChart"><div class="tip" id="dlgTip"></div></div>
+      <button type="button" class="navArrow right" id="dlgNext" aria-label="下一个">›</button>
+    </div>
     <div class="ohlc" id="dlgOhlc">把鼠标移到图上查看某一根K线</div>
   </div>
 </div>
@@ -2910,7 +2925,7 @@ async function drawMinute() {
     const m = await loadMinute(KL.sym);
     if (!m.bars || !m.bars.length) throw new Error("没有分时数据");
     const W = host.clientWidth || 900, H = 520;
-    const mL = 8, mR = 56, iw = Math.max(120, W - mL - mR);
+    const mL = 8, mR = 92, iw = Math.max(120, W - mL - mR);
     const yP = 12, hP = 330, yV = yP + hP + 26, hV = 76;
     const n = m.bars.length;
     const x = i => mL + (iw / Math.max(1, n - 1)) * i;
@@ -3013,7 +3028,7 @@ function drawStock() {
   all.forEach((b, i) => MA_DEF.forEach(m => { ma[m.k][i] = sma(closesAll, m.n, i); }));
 
   const W = host.clientWidth || 900, H = 520;
-  const mL = 8, mR = 56, iw = Math.max(120, W - mL - mR);
+  const mL = 8, mR = 92, iw = Math.max(120, W - mL - mR);
   const yP = 10, hP = 296, yV = yP + hP + 26, hV = 62, yM = yV + hV + 22, hM = 92;
   const bw = Math.max(1.2, (iw / n) * 0.68);
   const x = i => mL + (iw / n) * (i + 0.5);
