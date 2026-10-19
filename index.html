@@ -84,6 +84,7 @@ tbody tr:hover{background:var(--soft)}
 .tag.ok{background:var(--accent);color:#fff}
 .tag.bad{background:var(--fg);color:var(--card)}
 .tag.rec{background:#e08b00;color:#fff;font-weight:600}
+.tag.hi{background:#4a5568;color:#fff}
 tr.rec td{background:rgba(224,139,0,.14)}
 .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:12px 0}
 input[type=search]{font:inherit;color:inherit;background:var(--card);border:1px solid var(--border);
@@ -173,7 +174,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
     <div><div class="k">竞价锚定判断（按《情绪流》2.3 的七大量化标准）</div></div>
     <span class="k" id="aucMeta"></span>
     <button type="button" id="aucRefresh">立即刷新</button>
-    <button type="button" id="aucAuto" class="on">自动刷新 15 秒 · 开</button>
+    <button type="button" id="aucAuto" class="on">自动刷新 9:25 · 开</button>
   </div>
   <div id="aucBody"></div>
 </section>
@@ -222,6 +223,13 @@ tbody tr:hover td .lnk{text-decoration:underline}
     <span class="k" id="monInfo"></span>
   </div>
   <div class="panel"><table id="t_mon"></table></div>
+  <div class="k" style="margin:2px 0 14px">
+    <b>一进二实测（近5年 · 主板 · 剔ST）</b>：这个形态出现后，次日打二板能摸到涨停的只有
+    <b>18.6%</b>；摸到并成交的那批胜率 <b>37.6%</b>、平均 <b>−1.86%</b>（n=589），
+    <b>负期望，别按一进二去打</b>。拆分：当天封住 52.9%／+1.37%，炸板 31.2%／−3.19%。
+    同口径下"所有首板"的一进二是 39.5%／−1.53%，说明这个形态对一进二<b>没有加成</b>，
+    只当形态观察用。作为对照：首板当天收盘买、次日收盘卖是 53.3%／+1.53%（全市场首板 57.0%／+1.62%）。
+  </div>
   <h3>② 首板回踩 · 缩量守均线（<span class="up">尾盘 14:55 买</span>）</h3>
   <div class="bar">
     <div><div class="k">筛选</div></div>
@@ -713,69 +721,37 @@ tbody tr:hover td .lnk{text-decoration:underline}
 
   /* 情绪锚定池（《情绪流》第二章的五个点，上限 10 只）—— 只用来判断"今天情绪怎么样"，
      和"今天打哪只"分开看：锚定池是温度计，打板预案才是下单清单。 */
-  function anchorPool(pool) {
-    var zt = (pool || []).filter(function (p) { return p.group === '涨停'; });
-    var duan = (pool || []).filter(function (p) { return p.group === '断板'; });
-    var face = (pool || []).filter(function (p) { return p.group === '大面'; });
-    var dts = face.filter(function (p) { return !p.isZb; });
-    var zbs = face.filter(function (p) { return p.isZb; });
-    var out = [], seen = {};
-    function add(cat, p, note) {
-      if (!p || seen[p.symbol] || out.length >= 10) return;
-      seen[p.symbol] = 1;
-      out.push({ cat: cat, p: p, note: note });
-    }
-    var zts = zt.slice().sort(function (a, b) {
-      return (b.lbc || 1) - (a.lbc || 1) || (a.fbt || 9e9) - (b.fbt || 9e9);
-    });
-    /* ⑤ 情绪核心阵眼（当天最能影响情绪的品种，含一字，只观察不做开仓参考） */
-    if (zts.length) {
-      var t = zts[0];
-      var tag = (t.lbc || 1) + ' 板 · ' + (t.yizi ? '一字缩量' : '换手 ' + num(t.hs, 1) + '%');
-      tag += ' · ' + sealTime(t);
-      if (t.chg10 && t.chg10 >= 90) {
-        tag += ' · 10日 +' + t.chg10.toFixed(0) + '%（触及严重异常波动/异动监管）';
-      } else if (t.chg10 && t.chg10 >= 60) {
-        tag += ' · 10日 +' + t.chg10.toFixed(0) + '%（接近异动）';
+  /* 锚定标的 = 「前期高度龙头」今天给出的反馈，不是今天新涨停的票。
+     近 15 个交易日出现过 ≥3 板的票入选；按辨识度（最高板）排序，
+     再标出今天的状态（仍涨停 / 断板 / 炸板 / 跌停 / 未涨停）。
+     今天首板、二板的打板机会放在「六、个股打板预案」，两边不混。 */
+  function anchorPool(pool, leaders) {
+    var today = {};
+    (pool || []).forEach(function (p) { today[p.symbol] = p; });
+    var rows = (leaders || []).map(function (L) {
+      var p = today[L.symbol] || null;
+      var state, zone = null, board = 0;
+      if (p && p.group === '涨停') {
+        board = p.lbc || 1;
+        state = '今日仍涨停 · ' + board + ' 板' + (p.yizi ? '（一字）' : ' · 换手 ' + num(p.hs, 1) + '%');
+        zone = '涨停';
+      } else if (p && p.group === '断板') {
+        state = '今日断板 · ' + pct(p.today_pct, 1);
+        zone = '大面';
+      } else if (p && p.group === '大面') {
+        state = (p.isZb ? '今日炸板 · ' : '今日跌停 · ') + pct(p.today_pct, 1);
+        zone = p.isZb ? '大面' : '跌停';
+      } else {
+        state = '今日未涨停';
       }
-      add('⑤ 情绪核心阵眼 ★异动', t, tag);
-    }
-    /* ① 最高连板（只算换手板）+ 次高连板 */
-    var got = 0;
-    zts.forEach(function (t) {
-      if (got >= 2 || t.yizi) return;
-      add(got === 0 ? '① 最高连板·换手板' : '① 次高连板', t,
-        (t.lbc || 1) + ' 板 · 换手 ' + num(t.hs, 1) + '%' +
-        (t.chg10 ? ' · 10日 ' + pct(t.chg10, 0) : '') + ' · ' + sealTime(t));
-      got++;
+      return { L: L, p: p, state: state, zone: zone, board: board,
+               ident: Math.max(L.lb || 1, board) };
     });
-    /* ② 辨识度反包（今天涨停、前天涨停、昨天断板，即 n+n 反包） */
-    var fbs = zt.filter(function (p) {
-      return (p.tags || []).indexOf('断板反包') >= 0 && !p.yizi;
-    }).sort(function (a, b) { return (b.lbc || 1) - (a.lbc || 1) || (b.chg10 || 0) - (a.chg10 || 0); });
-    fbs.slice(0, 2).forEach(function (p) {
-      add('② 辨识度反包', p, '前天涨停 → 昨天断板 → 今天涨停 · ' + (p.lbc || 1) + ' 板');
+    rows.sort(function (a, b) {
+      return b.ident - a.ident || (b.board || 0) - (a.board || 0) ||
+             (a.L.date < b.L.date ? 1 : -1);
     });
-    /* ③ 辨识度断板（昨天有 2 板以上、今天没涨停） */
-    duan.slice().sort(function (a, b) { return (b.lbc || 0) - (a.lbc || 0); })
-      .slice(0, 2).forEach(function (p) {
-        add('③ 辨识度断板', p, '昨日 ' + (p.lbc || 1) + ' 板 · 今日 ' + pct(p.today_pct, 1));
-      });
-    /* ④ 辨识度大面（昨日有板的高位票今天被核/深回落） */
-    var bigs = dts.concat(zbs).sort(function (a, b) {
-      return (b.lbc || 0) - (a.lbc || 0) || (a.today_pct || 0) - (b.today_pct || 0);
-    });
-    bigs.slice(0, 2).forEach(function (p) {
-      var tag = p.isZb ? ('炸板回落 ' + num(p.km, 1) + '%') : '跌停';
-      add('④ 辨识度大面', p, (p.lbc ? '昨日 ' + p.lbc + ' 板 → ' : '') + tag + ' · 今日 ' + pct(p.today_pct, 1));
-    });
-    /* 补位：剩下涨停里辨识度最高的（板数 → 10 日涨幅） */
-    zt.slice().filter(function (p) { return !p.yizi; })
-      .sort(function (a, b) { return (b.lbc || 1) - (a.lbc || 1) || (b.chg10 || 0) - (a.chg10 || 0); })
-      .forEach(function (p) {
-      add('① 连板梯队补充', p, (p.lbc || 1) + ' 板 · 换手 ' + num(p.hs, 1) + '% · ' + (p.bk || ''));
-      });
-    return out;
+    return rows.slice(0, 10);
   }
 
   /* 按《情绪流》2.3 的量化标准给次日预期 */
@@ -993,20 +969,24 @@ tbody tr:hover td .lnk{text-decoration:underline}
     L.push('');
 
     /* 五、情绪锚定池（判断明天整体情绪用，和下面的个股预案分开看） */
-    var anc = anchorPool(pool);
+    var anc = anchorPool(pool, c.leaders);
     L.push('### 五、情绪锚定池（' + anc.length + ' 只，判断明天整体情绪用）');
     L.push('');
-    L.push('按《情绪流》第二章的五个点选：① 最高连板（只算换手板）② 辨识度反包 ③ 辨识度断板 ' +
-      '④ 辨识度大面 ⑤ 情绪核心阵眼；重点盯**近期高度龙头**和**异动监管标的**（10 日涨幅接近/触及严重异常波动），上限 10 只。');
+    L.push('锚定的不是今天新涨停的票，而是**前期高度龙头今天给出的反馈**（温度计）：' +
+      '取近 15 个交易日出现过 **≥3 板**的龙头，看它们今天是仍涨停、断板、炸板还是跌停。上限 10 只。');
+    L.push('');
+    L.push('今天首板/二板的打板机会在第六节，不放进这里。');
     L.push('');
     if (anc.length) {
       L.push('| # | 类别 | 个股 | 说明 | 符合预期 | 超预期 | 不及预期 |');
       L.push('|---|---|---|---|---|---|---|');
       anc.forEach(function (a, i) {
         var p = a.p;
-        var ex = expectFor(zoneOf(p), kindOf(p), (p.group === '涨停') ? null : p.km);
-        a.ex = ex;
-        L.push('| ' + (i + 1) + ' | ' + a.cat + ' | ' + p.name + ' | ' + a.note + ' | ' +
+        var cat = '前期 ' + a.L.lb + ' 板龙头';
+        var ex = p
+          ? expectFor(zoneOf(p), kindOf(p), (p.group === '涨停') ? null : p.km)
+          : ['—', '—', '—', '观察'];
+        L.push('| ' + (i + 1) + ' | ' + cat + ' | ' + a.L.name + ' | ' + a.state + ' | ' +
           ex[0] + ' | ' + ex[1] + ' | ' + ex[2] + ' |');
       });
       L.push('');
@@ -1019,7 +999,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
         '盘中才走出超预期的（10:30 之后）不算，要看次日能否延续。');
       L.push('4. **尾盘复核**：超过半数锚定收在超预期标准之上 → 情绪向上修复，次日再验证。');
       L.push('');
-      L.push('> 阵眼是温度计：' + (anc[0] ? anc[0].p.name : '-') + ' 若继续给出正反馈，情绪容错率维持；' +
+      L.push('> 阵眼是温度计：' + (anc[0] ? anc[0].L.name : '-') + ' 若继续给出正反馈，情绪容错率维持；' +
         '若它的收盘价掉到 -5% 以下，短线情绪转负。');
       L.push('');
     }
@@ -1734,7 +1714,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
         (all || []).forEach(function (rec) { if (rec && rec.date && rec.rows) ctx.hist[rec.date] = rec.rows; });
         // 确定要拉 K 线的股票：模式二候选（3板+）+ 监控用的今日涨停股 + 首板回踩候选
         var c2 = {}, poolDates = ctx.poolDates;
-        poolDates.slice(-15).forEach(function (dt) {
+        ctx.poolDates.slice(-15).forEach(function (dt) {
           ((ctx.pools[dt] || {}).zt || []).forEach(function (x) {
             if ((x.lbc || 1) >= 3) c2[E.symOf(x.c, x.m)] = 1;
           });
@@ -1785,6 +1765,20 @@ tbody tr:hover td .lnk{text-decoration:underline}
         }
         var phase = phaseOf(emotion);
         var anchor = { date: ctx.dt, pool: buildAnchor(ctx.dt, ctx.pools, ctx.snap, ctx.kl) };
+        /* 情绪锚定池用「前期高度龙头」：近 15 个交易日出现过 ≥3 板的票，
+           看的是它们今天的反馈（继续板 / 断板 / 炸板 / 跌停），不是今天新涨停的票 */
+        var lmap = {};
+        ctx.poolDates.slice(-15).forEach(function (dt) {
+          ((ctx.pools[dt] || {}).zt || []).forEach(function (x) {
+            var lb = x.lbc || 1;
+            if (lb < 3) return;
+            var s = E.symOf(x.c, x.m);
+            if (!lmap[s] || lb > lmap[s].lb) {
+              lmap[s] = { symbol: s, name: x.n, lb: lb, date: dt, bk: x.hybk || '' };
+            }
+          });
+        });
+        anchor.leaders = Object.keys(lmap).map(function (k) { return lmap[k]; });
         var ladder = buildLadder(ctx.poolDates, ctx.pools, ctx.dt);
         var m2 = buildMode2(ctx.poolDates, ctx.pools, ctx.snap, ctx.kl);
         var monitor = [];
@@ -1865,6 +1859,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
           advise: window.__ADVISE__ || {},
           opinion: window.__PHONE_OPINION__.make({
             date: ctx.dt, emotion: emotion, ladder: ladder, pool: anchor.pool,
+            leaders: anchor.leaders,
             mode2: m2.mode2, pending: m2.pending, market: market, phase: phase
           })
         };
@@ -2365,6 +2360,39 @@ function aucBan(r) {
   return "连跌 " + (p.lbt || 1) + " 天";
 }
 
+/* 情绪锚定：只看前期高度龙头（DATA.anchor.leaders）今天的竞价反馈。
+   判定标准沿用《情绪流》2.3 的八条量化预期（AUC_RULES）。 */
+function buildAucAnchors(pool, quotes) {
+  const leaders = (DATA.anchor && DATA.anchor.leaders) || [];
+  const bySym = {};
+  (pool.items || []).forEach(p => { bySym[p.symbol] = p; });
+  const rows = leaders.map(L => {
+    const p = bySym[L.symbol] || null;
+    const q = quotes[L.symbol] || null;
+    let state = "未涨停", kind = "", rule = "-", gap = null, lv = "—";
+    if (p) {
+      if (p.group === "涨停") state = "涨停 " + (p.lbc || 1) + "板";
+      else if (p.group === "断板") state = "断板";
+      else if (p.group === "大面") state = p.isZb ? "炸板" : "跌停";
+      kind = aucKind(p);
+      rule = (AUC_RULES[kind] || {}).desc || "-";
+      if (q && q.preClose) {
+        gap = ((q.close || q.preClose) / q.preClose - 1) * 100;
+        lv = aucJudge(kind, gap);
+      }
+    } else if (q && q.preClose) {
+      gap = ((q.close || q.preClose) / q.preClose - 1) * 100;   // 今天没进池子，只看涨跌
+    }
+    return { symbol: L.symbol, name: L.name, lb: L.lb, state: state, kind: kind,
+             rule: rule, gap: gap, lv: lv, inPool: !!p,
+             board: (p && p.group === "涨停") ? (p.lbc || 1) : 0 };
+  });
+  // 《情绪流》上限 10 只：按辨识度（前期最高板 / 今日板数）排序后截断
+  rows.sort((a, b) => Math.max(b.lb || 1, b.board) - Math.max(a.lb || 1, a.board) ||
+                      (b.board || 0) - (a.board || 0) || (b.lb || 0) - (a.lb || 0));
+  return rows.slice(0, 10);
+}
+
 async function loadAuction() {
   if (AUC.busy) return;
   AUC.busy = true;
@@ -2388,7 +2416,10 @@ async function loadAuction() {
   }
   let quotes = {};
   try {
-    const syms = pool.items.map(p => p.symbol);
+    // 锚定池里的前期龙头也要报价（有些今天不在池子里）
+    const leaders = (DATA.anchor && DATA.anchor.leaders) || [];
+    const syms = pool.items.map(p => p.symbol).concat(leaders.map(l => l.symbol))
+      .filter((s, i, a) => a.indexOf(s) === i);
     if (PHONE) {
       quotes = await window.__PHONE_ENGINE__.quoteBatch(syms);
     } else {
@@ -2417,12 +2448,17 @@ async function loadAuction() {
       _p: p,
     });
   });
-  const sup = rows.filter(r => r.lv === "超预期").length;
-  const ok = rows.filter(r => r.lv === "符合").length;
-  const bad = rows.filter(r => r.lv === "不及预期").length;
-  const total = rows.length;
+  /* 情绪结论只由「前期高度龙头」的反馈决定，不是全池 100 多只的平均 */
+  const ANC = buildAucAnchors(pool, quotes);
+  const aEff = ANC.filter(x => x.inPool);                    // 今天有反馈（涨停/断板/炸板/跌停）
+  const sup = aEff.filter(x => x.lv === "超预期").length;
+  const ok = aEff.filter(x => x.lv === "符合").length;
+  const bad = aEff.filter(x => x.lv === "不及预期").length;
+  const total = aEff.length;
   let verdict, kls;
-  if (sup * 2 >= total) {
+  if (!total) {
+    verdict = "锚定池今日无反馈"; kls = "";
+  } else if (sup * 2 >= total) {
     verdict = "情绪超预期"; kls = "up";
   } else if (bad * 2 >= total) {
     verdict = "情绪不及预期"; kls = "down";
@@ -2430,7 +2466,7 @@ async function loadAuction() {
     verdict = "情绪符合预期"; kls = "";
   }
   const advice = verdict === "情绪超预期"
-    ? "可以出手：连板方向看弱转强，或锚定池里的反包首板（文档 3.2 / 3.3）"
+    ? "可以出手：连板看弱转强、反包看锚定池（文档 3.2 / 3.3）"
     : (verdict === "情绪不及预期"
       ? "当天只取关，不开新仓（文档 2.4）"
       : "以持仓观察为主：持仓主动的留，被动的走，不新开仓");
@@ -2439,11 +2475,16 @@ async function loadAuction() {
     t.slice(8, 10) + ":" + t.slice(10, 12)) : "-";
   const clock = aucClockText();
   cardBox.innerHTML =
-    card("结论", verdict, "超预期 " + sup + " / 符合 " + ok + " / 不及预期 " + bad + "（共 " + total + " 只）", kls) +
-    card("可操作性", sup * 2 >= total ? "可开仓" : "不新开仓", advice) +
+    card("情绪锚定判定", verdict, "前期龙头 " + ANC.length + " 只，今天有反馈 " + total +
+      " 只：超预期 " + sup + " / 符合 " + ok + " / 不及预期 " + bad, kls) +
+    card("可操作性", (total && sup * 2 >= total) ? "可开仓" : "不新开仓", advice) +
     card("行情时间", tTxt, clock +
       (clock === "非交易时段" ? " · 这不是竞价数据，判断仅供参考，请在 9:15–9:25 使用本页" : ""));
-  const groups = [["超预期", sup, "up"], ["符合", ok, ""], ["不及预期", bad, "down"]];
+  // 下面三张表是全池逐只判定（不是情绪结论），计数单独算
+  const rSup = rows.filter(r => r.lv === "超预期").length;
+  const rOk = rows.filter(r => r.lv === "符合").length;
+  const rBad = rows.filter(r => r.lv === "不及预期").length;
+  const groups = [["超预期", rSup, "up"], ["符合", rOk, ""], ["不及预期", rBad, "down"]];
   /* ---------- 分类涨停梯队：找"整体梯队完整"的题材 ---------- */
   const ladders = sectorLadders(pool.items);
   const full = ladders.filter(r => r.complete);
@@ -2458,11 +2499,22 @@ async function loadAuction() {
     if (!g[1]) return;
     html += "<h3>" + g[0] + "（" + g[1] + " 只）</h3><div class='panel'><table id='auc_t" + i + "'></table></div>";
   });
+  /* ---------- 情绪锚定池的竞价反馈（情绪结论就是从这里来的） ---------- */
+  html += "<h3>情绪锚定池 · 竞价反馈（前期高度龙头 " + ANC.length + " 只）</h3>" +
+    "<div class='panel'><table id='auc_anchor'></table></div>" +
+    "<div class='k' style='margin:-4px 0 10px'>" +
+    "上面那张卡的「情绪判定」＝看这 " + ANC.length + " 只的反馈：超预期过半→情绪超预期；不及预期过半→情绪不及预期；其余→符合预期。" +
+    "今天没有涨停/断板/炸板/跌停的记为「未涨停」，不参与计数。判定标准按《情绪流》2.3 的八条量化预期。" +
+    "</div>";
   /* ---------- 打哪一个：直接在下面的表里标出来 ---------- */
   const picks = pickBoards(rows, ladders, pool.items);
   const playable = picks.filter(p => p.score >= REC_MIN);
   const recRank = {};
   playable.slice(0, 3).forEach((p, i) => { recRank[p.symbol] = i + 1; });
+  // 高度板（3板及以上）就算分数没到 7，也单独标出来观察：3进4/4进5/6板以上不能被漏掉
+  const hiPicks = picks.filter(p => p.lb >= 3 && p.score >= 4 && !recRank[p.symbol]).slice(0, 3);
+  const hiRank = {};
+  hiPicks.forEach((p, i) => { hiRank[p.symbol] = i + 1; });
   html += "<div class='k' id='aucPickNote' style='margin:2px 0 12px'></div>";
   body.innerHTML = html;
   if (ladders.length) {
@@ -2482,12 +2534,23 @@ async function loadAuction() {
     ], { sort: (a, b) => (b.complete ? 1 : 0) - (a.complete ? 1 : 0) ||
                          b.max_lb - a.max_lb || b.count - a.count });
   }
+  table("auc_anchor", ANC, [
+    { key: "name", label: "前期龙头", left: true },
+    { key: "lb", label: "前期最高板", num: true, render: r => r.lb + " 板" },
+    { key: "state", label: "今日状态", left: true },
+    { key: "rule", label: "次日预期（符合→超预期）", left: true },
+    { key: "gap", label: "竞价高开", num: true, cls: r => cls(r.gap), render: r => r.gap === null ? "-" : pct(r.gap, 2) },
+    { key: "lv", label: "判定", left: true, render: r =>
+        '<span class="tag ' + (r.lv === "超预期" ? "ok" : r.lv === "不及预期" ? "bad" : "") + '">' + r.lv + "</span>" },
+  ], { sort: (a, b) => (b.lb || 0) - (a.lb || 0) });
   const cols = [
     { key: "symbol", label: "代码", left: true },
     { key: "name", label: "名称", left: true, render: r =>
         (recRank[r.symbol]
           ? '<span class="tag rec">' + (recRank[r.symbol] === 1 ? "★ 首选打板" : "推荐打板") + "</span> "
-          : "") + esc(r.name || "") },
+          : (hiRank[r.symbol]
+            ? '<span class="tag hi">高度板 · 观察</span> '
+            : "")) + esc(r.name || "") },
     { key: "lb", label: "几天几板", num: true, sortable: true,
       sortVal: r => tbVal(auctionRow(r)), render: r => aucBan(r) },
     { key: "kindLabel", label: "昨日类型", left: true },
@@ -2519,12 +2582,25 @@ async function loadAuction() {
       "。<br>只在<b>封板前挂涨停价排队</b>，收盘没封住次日不管盈亏都走，封住后次日冲高 +3~5% 也走。" +
       "门槛 " + REC_MIN + " 分（≈3板以上＋竞价超预期＋题材有跟风）。参考：近半年按 7 分门槛只打首选，胜率 57.3%、均值 +0.60%。";
   }
+  if (hiPicks.length) {
+    note.innerHTML += "<br><b>灰色「高度板·观察」</b>：" + hiPicks.map(p =>
+      esc(p.name) + "（" + p.lb + "板，" + p.score + " 分）").join("、") +
+      " —— 3板及以上的高度板，分数没到 " + REC_MIN + " 分，<b>只跟踪不追</b>（看它明天是继续封还是断板，用来判断情绪）。";
+  }
   AUC.busy = false;
 }
 
 function aucAutoTick() {
-  if (AUC.timer) { clearInterval(AUC.timer); AUC.timer = null; }
-  if (AUC.auto) AUC.timer = setInterval(() => { if (!$("#tab-auction").hidden) loadAuction(); }, 15000);
+  if (AUC.timer) { clearInterval(AUC.timer); clearTimeout(AUC.timer); AUC.timer = null; }
+  if (!AUC.auto) return;
+  // 只在每天 9:25 自动刷新一次（其他时间不刷）；手动刷仍可用「立即刷新」
+  var now = new Date();
+  var target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 25, 5);
+  if (now >= target) return;                 // 今天 9:25 已过，不再自动刷
+  AUC.timer = setTimeout(function () {
+    AUC.timer = null;
+    if (AUC.auto && !$("#tab-auction").hidden) loadAuction();
+  }, target - now);
 }
 
 /* ---------- 各页渲染 ---------- */
@@ -3794,7 +3870,7 @@ $("#dlgFav").addEventListener("click", () => {
 $("#aucRefresh").addEventListener("click", loadAuction);
 $("#aucAuto").addEventListener("click", () => {
   AUC.auto = !AUC.auto;
-  $("#aucAuto").textContent = "自动刷新 15 秒 · " + (AUC.auto ? "开" : "关");
+  $("#aucAuto").textContent = "自动刷新 9:25 · " + (AUC.auto ? "开" : "关");
   $("#aucAuto").classList.toggle("on", AUC.auto);
   aucAutoTick();
 });
