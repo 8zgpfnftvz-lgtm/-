@@ -1465,7 +1465,9 @@ tbody tr:hover td .lnk{text-decoration:underline}
       for (var j = hiRel + 1; j < n; j++) lo = Math.min(lo, bars[j].l);
       var dd = (j > hiRel + 1 || hiRel + 1 < n) ? (ref - (lo === Infinity ? bars[n - 1].l : lo)) / ref * 100 : 0;
       var curDd = (ref - cur) / ref * 100;
-      if (dd > 20) return;          // 最高板向下回调超过 20% 的直接剔除（太弱，不算企稳）
+      // 3板回调仍按20%硬上限；4板以上并入「高位断板再起」，允许最深25%回撤后重新启动。
+      var maxDd = info.lbc >= 4 ? 25 : 20;
+      if (dd > maxDd) return;
       /* 企稳 = 连续涨停以后回调，然后开始横盘。
          判定只用价格与量能，不再看 MACD/金叉。 */
       var loIdx = hiRel, loLow = Infinity;
@@ -1493,19 +1495,22 @@ tbody tr:hover td .lnk{text-decoration:underline}
       if (shrink !== null && shrink <= 0.8) sig.push('缩量');
       if (ma5 && cur >= ma5) sig.push('站上5日线');
       var cat;
-      /* 5板以上的高位断板：回调≤20% 之后「重新向上」或「横盘整理」都算打开高度 */
+      /* 4板以上的高位断板统一归入这一类：深回撤≤25%后重新向上，或横盘整理。 */
       var rebound = loLow ? (cur / loLow - 1) * 100 : 0;
-      var highLb = info.lbc >= 5 && dd <= 20;
+      var highLb = info.lbc >= 4 && dd <= 25;
       var reup = highLb && rebound >= 5 && ma5 && cur > ma5;            // 重新向上
       var sideways = highLb && flatDays >= 4 && flatAmp <= 12 && noNewLow;  // 横盘就行
       if (reup || sideways) cat = 'D_高位断板再起';
+      else if (highLb && dd > 20) cat = 'C_还在回调';                     // 深回撤但尚未重新启动
       else if (dd >= 15 && dd <= 20 && flatDays >= 4 && flatAmp <= 12 && noNewLow) cat = 'A_横盘企稳';
       else if (dd >= 10 && flatDays >= 2 && flatAmp <= 10 && noNewLow) cat = 'B_刚开始横盘';
       else cat = 'C_还在回调';
       var okLb = info.lbc >= 3 && info.lbc <= 4;
       var warn = [];
       if (info.lbc >= 5) warn.push('5板以上');
+      else if (info.lbc >= 4) warn.push('4板高位');
       if (dd >= 15 && dd <= 20) warn.push('回撤15~20%');
+      else if (dd > 20) warn.push('深回撤20~25%');
       if (ma20 && cur >= ma20) warn.push('已站20日线');
       out.push({
         symbol: s, name: bars.name || info.name, bk: info.bk,
@@ -3403,6 +3408,7 @@ const M2COLS = [
   { key: "rise_from_low", label: "离最低点", num: true, sortable: true, cls: r => cls(r.rise_from_low), render: r => pct(r.rise_from_low, 1) },
   { key: "signals", label: "信号", left: true, render: r => (r.signals || []).map(t => '<span class="tag">' + esc(t) + "</span>").join("") },
   { key: "pass", label: "判定", left: true, render: r => {
+      if (r.cat === "D_高位断板再起") return '<span class="tag ok">断板再起·可跟</span>';
       if (r.pass) return '<span class="tag ok">横盘企稳·可跟</span>';
       if (r.cat === "A_横盘企稳") return '<span class="tag ok">横盘企稳</span>';
       if (r.max_lb >= 5) return '<span class="tag bad">5板以上·期望偏低</span>';
@@ -3427,8 +3433,8 @@ function renderM2() {
     "<div class='v s'>涨停 " + int(mk.zt) + " 家 · 前5日均 " + num(mk.prev5, 1) + " 家 —— " +
     "<span class='" + (mk.rising ? "up" : "down") + "'>" + (mk.rising ? "回升" : "回落") + "</span></div>" +
     "<div class='k' style='margin-top:6px'><b>企稳的定义（本页只按这个判定）</b>：" +
-    "连续涨停 → 回调（最大回撤 <b>15%~20%</b>，超过 20% 直接剔除）→ <b>开始横盘</b>：横盘 ≥4 日、区间振幅 ≤12%、最近 3 日不再创新低。" +
-    "<br><b>D 类（5 板以上）</b>：断板后回调 ≤20%，随后<b>重新向上</b>（离低点反弹 ≥5%、站上 5 日线）<b>或横盘整理</b>（≥4 日、振幅 ≤12%、不创新低）都算打开高度。" +
+    "连续涨停 → 回调 → 开始横盘：横盘 ≥4 日、区间振幅 ≤12%、最近 3 日不再创新低。3 板回调最大回撤上限为 <b>20%</b>。" +
+    "<br><b>D 类（4 板及以上）</b>：统一作为<b>高位断板再起</b>，允许最大回撤放宽到 <b>25%</b>；随后<b>重新向上</b>（离低点反弹 ≥5%、站上 5 日线）<b>或横盘整理</b>（≥4 日、振幅 ≤12%、不创新低）都算打开高度。" +
     "MACD / 金叉那套已经删掉了，不再参与判定。</div>" +
     "<div class='k' style='margin-top:6px'>5 年实测（2021-10~2026-09，买入后 -5%止损/+10%止盈，最多持10日）：" +
     "全部 3 板以上 n=21298、胜率 46.1%、平均 +0.52%、盈亏比 1.23；" +
@@ -3440,7 +3446,7 @@ function renderM2() {
   $("#m2stats").innerHTML =
     card("样本", all.length + " 只", "3板+ 后已进入回调/横盘" + (hidden.length ? "（已隐藏 " + hidden.length + " 只）" : "")) +
     card("D 高位断板再起", String((cats["D_高位断板再起"] || []).length),
-      "5板以上 · 回调≤20% · 重新向上", (cats["D_高位断板再起"] || []).length ? "up" : "") +
+      "4板以上 · 回调≤25% · 重新向上或横盘", (cats["D_高位断板再起"] || []).length ? "up" : "") +
     card("A 横盘企稳", String((cats["A_横盘企稳"] || []).length), "回调后已横盘 ≥4 日", (cats["A_横盘企稳"] || []).length ? "up" : "") +
     card("B 刚开始横盘", String((cats["B_刚开始横盘"] || []).length), "横盘 2~3 日，观察") +
     card("C 还在回调", String((cats["C_还在回调"] || []).length), "没企稳，别接") +
@@ -3451,7 +3457,7 @@ function renderM2() {
   let html = "";
   order.forEach(c => {
     if (!cats[c]) return;
-    const label = c === "D_高位断板再起" ? "D · 高位断板再起（5板以上，回调≤20% 后重新向上或横盘）"
+    const label = c === "D_高位断板再起" ? "D · 高位断板再起（4板以上，回调≤25% 后重新向上或横盘）"
       : (c === "A_横盘企稳" ? "A · 横盘企稳（回调后开始横盘，重点看这里）"
       : (c === "B_刚开始横盘" ? "B · 刚开始横盘（横盘 2~3 日，观察）" : "C · 还在回调（未企稳）"));
     html += "<h3>" + esc(label) + "（" + cats[c].length + " 只）</h3><div class='panel'><table id='m2_" + order.indexOf(c) + "'></table></div>";
