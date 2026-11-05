@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -12,6 +12,7 @@
 <link rel="icon" href="icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
 
+<meta name="format-detection" content="telephone=no">
 <title>潜庐复盘 · 手机版</title>
 <style>
 :root{
@@ -24,6 +25,8 @@
          --up:#ff5b5b; --down:#35c97a; --accent:#6aa6ff; --soft:#23272e; }
 }
 *{box-sizing:border-box}
+html,body{width:100%;max-width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html,body,button,a,input,select,textarea,tr{touch-action:manipulation}
 body{margin:0;background:var(--bg);color:var(--fg);
   font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
 .wrap{max-width:1180px;margin:0 auto;padding:18px 16px 60px}
@@ -133,6 +136,35 @@ tbody tr:hover td .lnk{text-decoration:underline}
 .ma-legend{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 2px;font-size:12.5px;color:var(--muted)}
 .ma-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px}
 .ohlc{font-size:12.5px;color:var(--muted);margin:6px 0 0;font-variant-numeric:tabular-nums}
+@media (max-width:640px){
+  .wrap{padding:10px 8px calc(42px + env(safe-area-inset-bottom))}
+  header{padding:10px 12px;gap:8px;border-radius:10px}
+  .brand{font-size:15px}
+  .meta{font-size:11.5px}
+  header > div:last-child{gap:6px}
+  header button{padding:7px 9px;font-size:12.5px}
+  .tabs{gap:4px;margin:10px 0 8px}
+  .tabs button{padding:7px 10px;font-size:12.5px}
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .card{padding:10px;border-radius:10px}
+  .v{font-size:18px}
+  .v.s{font-size:14px}
+  h2{margin:16px 0 8px}
+  h3{margin:14px 0 7px}
+  .panel{padding:7px;border-radius:10px;overscroll-behavior-x:contain}
+  th,td{padding:6px 8px;font-size:12px}
+  .bar{gap:6px;margin:8px 0}
+  input[type=search],input,select,textarea{font-size:16px;min-width:0}
+  input[type=search]{width:100%;padding:8px 10px}
+  .bar > div:first-child{width:100%}
+  #dlg,#help{padding:8px}
+  .dlg-card{padding:10px;border-radius:10px}
+  .navArrow{width:28px;height:60px;font-size:20px;opacity:.45}
+}
+@media (max-width:380px){
+  .grid{grid-template-columns:1fr}
+  .wrap{padding-left:6px;padding-right:6px}
+}
 </style>
 </head>
 <body>
@@ -2150,6 +2182,14 @@ window.addEventListener("unhandledrejection", e => {
   else showErr(msg);
 });
 
+// 移动端禁用双击放大，但保留单指滚动、表格横滑和双指缩放。
+let _lastTouchEnd = 0;
+document.addEventListener("touchend", e => {
+  const now = Date.now();
+  if (e.touches.length === 0 && now - _lastTouchEnd < 320) e.preventDefault();
+  _lastTouchEnd = now;
+}, { passive: false });
+
 /* ---------- 基础工具 ---------- */
 const num = (v, d = 2) => (v === null || v === undefined || v === "" || isNaN(v)) ? "-" : Number(v).toFixed(d);
 const int = v => (v === null || v === undefined || v === "" || isNaN(v)) ? "-" : String(Math.round(Number(v)));
@@ -2717,7 +2757,14 @@ function ancAutoHiddenSave(syms) {
 }
 function ancAutoList() {
   const hidden = ancAutoHiddenLoad();
-  const src = (DATA && DATA.anchor && DATA.anchor.auto) || [];
+  let src = (DATA && DATA.anchor && DATA.anchor.auto) || [];
+  if (!src.length) {
+    // 早盘全市场数据还没跑完时，先用上一交易日收盘后保存的自动锚定池。
+    try {
+      const saved = JSON.parse(localStorage.getItem("auctionPool") || "{}");
+      if (saved && Array.isArray(saved.auto)) src = saved.auto;
+    } catch (e) { }
+  }
   return src.filter(L => hidden.indexOf(L.symbol) < 0).map(L => Object.assign({}, L, {
     source: "auto", reason: L.anchor_reason || "高位龙头", drawdown: L.drawdown
   }));
@@ -2794,6 +2841,45 @@ function buildAucAnchors(pool, quotes, list) {
   return rows;
 }
 
+function aucDecision(anchors, locked) {
+  const live = (anchors || []).filter(r => r.gap !== null && r.gap !== undefined);
+  const sup = live.filter(r => r.lv === "超预期").length;
+  const ok = live.filter(r => r.lv === "符合").length;
+  const bad = live.filter(r => r.lv === "不及预期").length;
+  const total = live.length;
+  let weighted = 0, weightSum = 0;
+  live.forEach(r => {
+    const w = Math.max(1, Math.min(3, 1 + ((r.lb || 1) - 3) * 0.5));
+    const v = r.lv === "超预期" ? 1 : (r.lv === "不及预期" ? -1 : 0);
+    weighted += w * v;
+    weightSum += w;
+  });
+  const score = weightSum ? weighted / weightSum : null;
+  let verdict = "等待9:25确认";
+  let action = "先不执行，等9:25锁定";
+  let clsName = "";
+  if (locked && !total) {
+    verdict = "锚定池今日无反馈";
+    action = "不开仓：锚定池没有有效竞价反馈";
+    clsName = "down";
+  } else if (locked && total) {
+    if (sup * 2 >= total || (score >= 0.3 && bad * 2 < total)) {
+      verdict = "情绪超预期";
+      action = "可开仓：只做模式一最强标的";
+      clsName = "up";
+    } else if (bad * 2 >= total || score <= -0.3) {
+      verdict = "情绪不及预期";
+      action = "不开仓：只处理持仓，不做新买入";
+      clsName = "down";
+    } else {
+      verdict = "情绪符合预期";
+      action = "谨慎：只做最强，半仓，其余放弃";
+    }
+  }
+  return { sup: sup, ok: ok, bad: bad, total: total, score: score,
+           verdict: verdict, action: action, cls: clsName, locked: !!locked };
+}
+
 /* 本机日期（交易清单 / 日志用） */
 function snapToday() {
   const d = new Date();
@@ -2853,7 +2939,7 @@ async function loadAuction() {
       _p: p,
     });
   });
-  /* 情绪结论只由「手动维护的锚定池」的 9:25 反馈决定 */
+  /* 情绪结论只由自动维护的高位锚定池 + 手动补充池的 9:25 反馈共同决定 */
   const list = ancCurrentList();
   // 9:25 窗口内抓一次并锁定；之后一律用这份快照判定，不再随盘中变化
   const _now = new Date();
@@ -2875,34 +2961,17 @@ async function loadAuction() {
   const ANC = buildAucAnchors(pool, qForAnc, list);
   AUC.ancSnap = snap ? snap.ts : null;
   // 今天有反馈的都算：涨停/断板/炸板/跌停，以及未涨停但竞价有数据的（按回调修复判定）
-  const aEff = ANC.filter(x => x.inPool || (x.gap !== null && x.gap !== undefined));
-  const sup = aEff.filter(x => x.lv === "超预期").length;
-  const ok = aEff.filter(x => x.lv === "符合").length;
-  const bad = aEff.filter(x => x.lv === "不及预期").length;
-  const total = aEff.length;
-  let verdict, kls;
-  if (!total) {
-    verdict = "锚定池今日无反馈"; kls = "";
-  } else if (sup * 2 >= total) {
-    verdict = "情绪超预期"; kls = "up";
-  } else if (bad * 2 >= total) {
-    verdict = "情绪不及预期"; kls = "down";
-  } else {
-    verdict = "情绪符合预期"; kls = "";
-  }
-  const advice = verdict === "情绪超预期"
-    ? "可以出手：连板看弱转强、反包看锚定池（文档 3.2 / 3.3）"
-    : (verdict === "情绪不及预期"
-      ? "当天只取关，不开新仓（文档 2.4）"
-      : "以持仓观察为主：持仓主动的留，被动的走，不新开仓");
+  const dec = aucDecision(ANC, !!snap);
   const t = (quotes[rows.length ? rows[0].symbol : ""] || {}).time || "";
   const tTxt = t ? (t.slice(0, 4) + "-" + t.slice(4, 6) + "-" + t.slice(6, 8) + " " +
     t.slice(8, 10) + ":" + t.slice(10, 12)) : "-";
   const clock = aucClockText();
   cardBox.innerHTML =
-    card("情绪锚定判定", verdict, "锚定池 " + ANC.length + " 只（9:25 数据），今天有反馈 " + total +
-      " 只：超预期 " + sup + " / 符合 " + ok + " / 不及预期 " + bad, kls) +
-    card("可操作性", (total && sup * 2 >= total) ? "可开仓" : "不新开仓", advice) +
+    card("情绪锚定判定", dec.verdict, "锚定池 " + ANC.length + " 只；今日反馈 " + dec.total +
+      " 只：超预期 " + dec.sup + " / 符合 " + dec.ok + " / 不及预期 " + dec.bad +
+      "；加权情绪分 " + (dec.score === null ? "-" : dec.score.toFixed(2)), dec.cls) +
+    card("可操作性", dec.action,
+      dec.locked ? "依据已锁定的9:25竞价反馈" : "尚未锁定9:25，只显示预判，不执行", dec.cls) +
     card("行情时间", tTxt, clock +
       (clock === "非交易时段" ? " · 这不是竞价数据，判断仅供参考，请在 9:15–9:25 使用本页" : ""));
   // 下面三张表是全池逐只判定（不是情绪结论），计数单独算
@@ -4299,6 +4368,7 @@ function applyData(payload) {
   try { renderPlanReview().catch(() => { }); } catch (e) { }
   try { renderMonitor(); } catch (e) { /* 监控数据缺失时不影响其它页 */ }
   try { renderWatch(); } catch (e) { /* 自选池异常不影响其它页 */ }
+  try { if (!$("#tab-auction").hidden) safeLoadAuction(); } catch (e) { }
   try { applyFold(); } catch (e) { /* 折叠状态应用失败不影响其它功能 */ }
   $("#opinion").innerHTML = mdToHtml(DATA.opinion);
   sortableMdTables($("#opinion"));
@@ -4316,6 +4386,7 @@ function applyData(payload) {
     if (pool.length && (pd !== todayStr || afterClose)) {
       localStorage.setItem("auctionPool", JSON.stringify({
         date: pd,
+        auto: (payload.anchor && payload.anchor.auto) || [],
         items: pool.map(p => ({
           symbol: p.symbol, name: p.name, group: p.group, lbc: p.lbc,
           fbt: p.fbt, lbt: p.lbt, zbc: p.zbc, today_pct: p.today_pct, km: p.km,
