@@ -3251,6 +3251,15 @@ async function renderPlanReview() {
   const box = document.getElementById("t_review");
   if (!box) return;
   const info = document.getElementById("revInfo");
+  if (!DATA || !DATA.anchor) {
+    if (info) info.textContent = "数据加载中，完成后自动显示回验结果";
+    table("t_review", [], [
+      { key: "name", label: "个股", left: true },
+      { key: "chg", label: "今日涨跌", num: true },
+      { key: "ret", label: "收盘收益", num: true },
+    ]);
+    return;
+  }
   const a = exAll();
   const days = Object.keys(a).filter(d => d < snapToday()).sort();
   const cols = [
@@ -4287,6 +4296,7 @@ function applyData(payload) {
   renderOverview(); renderM1(); renderM2();
   try { renderSig(); } catch (e) { }
   try { renderTrade(); } catch (e) { /* 交易页异常不影响其它页 */ }
+  try { renderPlanReview().catch(() => { }); } catch (e) { }
   try { renderMonitor(); } catch (e) { /* 监控数据缺失时不影响其它页 */ }
   try { renderWatch(); } catch (e) { /* 自选池异常不影响其它页 */ }
   try { applyFold(); } catch (e) { /* 折叠状态应用失败不影响其它功能 */ }
@@ -4433,7 +4443,10 @@ $("#tabs").addEventListener("click", e => {
   if (b.dataset.tab === "watch") { renderWatch(); }
   if (b.dataset.tab === "trade") {
     try { renderTrade(); } catch (e) { }
-    try { renderPlanReview(); } catch (e) { }
+    renderPlanReview().catch(e => {
+      const info = document.getElementById("revInfo");
+      if (info) info.textContent = "回验暂时失败：" + e.message;
+    });
   }
   applyFold();
 });
@@ -4785,7 +4798,12 @@ $("#exAddBtn").addEventListener("click", async () => {
   renderTrade();
 });
 
-$("#revRefresh").addEventListener("click", () => { renderPlanReview(); });
+$("#revRefresh").addEventListener("click", () => {
+  renderPlanReview().catch(e => {
+    const info = document.getElementById("revInfo");
+    if (info) info.textContent = "回验暂时失败：" + e.message;
+  });
+});
 $("#q2").addEventListener("input", renderM2);
 
 /* ---------- 个股弹窗交互 ---------- */
