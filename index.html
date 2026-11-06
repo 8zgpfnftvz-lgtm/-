@@ -139,6 +139,79 @@ tbody tr:hover td .lnk{text-decoration:underline}
 .ma-legend{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 2px;font-size:12.5px;color:var(--muted)}
 .ma-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px}
 .ohlc{font-size:12.5px;color:var(--muted);margin:6px 0 0;font-variant-numeric:tabular-nums}
+.review-shell{display:flex;flex-direction:column;gap:10px}
+.review-kicker{font-size:10px;letter-spacing:2.2px;color:#8fa5c6;font-weight:700}
+.review-kicker.dark{color:var(--muted)}
+.review-sub{font-size:12px;color:#aab6c9}
+.review-date{font-size:12px;color:#9eacc0;text-align:right;white-space:nowrap}
+.review-gate{margin-top:10px;border-radius:12px;padding:10px 12px;border:1px solid #334155}
+.review-gate.gate-red{background:linear-gradient(120deg,rgba(127,29,29,.92),rgba(69,26,34,.9))}
+.review-gate.gate-green{background:linear-gradient(120deg,rgba(6,78,59,.92),rgba(20,83,75,.9))}
+.review-gate.gate-yellow{background:linear-gradient(120deg,rgba(113,63,18,.92),rgba(91,58,24,.9))}
+.review-gate-head{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}
+.traffic{width:13px;height:13px;border-radius:50%;background:#94a3b8;box-shadow:0 0 0 3px rgba(255,255,255,.08)}
+.gate-red .traffic{background:#ff5b5b;box-shadow:0 0 18px #ff5b5b}
+.gate-green .traffic{background:#35c97a;box-shadow:0 0 18px #35c97a}
+.gate-yellow .traffic{background:#f5b942;box-shadow:0 0 18px #f5b942}
+.review-gate-main{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:8px}
+.review-gate-stat{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);
+  border-radius:8px;padding:6px 8px}
+.review-gate-stat span{display:block;color:#b8c4d7;font-size:10.5px}
+.review-gate-stat b{display:block;font-size:17px;margin-top:1px;font-variant-numeric:tabular-nums}
+.review-section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px}
+.review-section h2{margin:2px 0 9px;font-size:16px}
+.review-section-head{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin-bottom:10px}
+.review-badge{display:inline-block;padding:4px 10px;border-radius:999px;background:var(--soft);
+  color:var(--muted);font-size:12px}
+.review-badge.red{background:rgba(217,43,43,.14);color:var(--up)}
+.review-badge.green{background:rgba(23,143,78,.14);color:var(--down)}
+.review-split{display:grid;grid-template-columns:1.35fr 1fr;gap:9px}
+.review-dims{display:flex;flex-direction:column;gap:6px}
+.review-diagnosis{background:#101827;color:#d7e1ef;border:1px solid #26344d;border-radius:11px;
+  padding:10px 12px;font-size:12px;line-height:1.55}
+.review-diagnosis b{display:block;color:#fff;margin-bottom:2px}
+.review-diagnosis div{color:#aebbd0}
+.review-anchor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:7px}
+.review-anchor{border:1px solid var(--border);border-radius:10px;padding:8px 9px;background:var(--card)}
+.review-anchor.good{border-left:3px solid var(--up)}
+.review-anchor.warn{border-left:3px solid #d69218}
+.review-anchor.bad{border-left:3px solid var(--down)}
+.anchor-head{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.anchor-head b{font-size:12.5px}
+.anchor-head span{font-size:10.5px;padding:1px 7px;border-radius:999px;background:var(--soft);color:var(--muted)}
+.review-anchor.good .anchor-head span{color:var(--up);background:rgba(217,43,43,.1)}
+.review-anchor.bad .anchor-head span{color:var(--down);background:rgba(23,143,78,.1)}
+.anchor-detail{font-size:11.5px;color:var(--fg);margin-top:4px;line-height:1.45}
+.anchor-extra{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.35}
+.review-dim{display:grid;grid-template-columns:90px 1fr 52px;gap:8px;align-items:center}
+.review-dim-label{font-size:12px;color:var(--muted)}
+.review-dim-track{height:6px;background:var(--soft);border-radius:999px;overflow:hidden}
+.review-dim-fill{height:100%;border-radius:999px;background:var(--accent)}
+.review-dim-fill.good{background:var(--up)}
+.review-dim-fill.warn{background:#d69218}
+.review-dim-fill.bad{background:var(--down)}
+.review-dim-value{font-size:12px;text-align:right;font-weight:600}
+.review-cycle{border-radius:11px;background:linear-gradient(160deg,var(--soft),transparent);
+  border:1px solid var(--border);padding:10px}
+.review-cycle-state{font-size:18px;font-weight:700;margin:3px 0 6px}
+.review-cycle-row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;
+  border-bottom:1px dashed var(--border);font-size:12.5px}
+.review-cycle-row:last-child{border-bottom:0}
+.review-cycle-row b{text-align:right}
+.review-execution{border-radius:13px;padding:15px 16px;border:1px solid var(--border);
+  background:var(--soft);font-size:14px;line-height:1.7}
+.review-execution.good{border-left:4px solid var(--up)}
+.review-execution.warn{border-left:4px solid #d69218}
+.review-execution.bad{border-left:4px solid var(--down)}
+.review-execution-title{font-size:17px;font-weight:700;margin-bottom:4px}
+.review-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px}
+.review-metric{border:1px solid var(--border);border-radius:11px;padding:10px;background:var(--soft)}
+.review-metric .m-label{font-size:10.5px;color:var(--muted)}
+.review-metric .m-value{font-size:19px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+.review-metric .m-note{font-size:10.5px;color:var(--muted);margin-top:1px}
+.review-full{border:1px solid var(--border);border-radius:14px;background:var(--card);overflow:hidden}
+.review-full summary{cursor:pointer;padding:13px 16px;font-weight:600;color:var(--muted)}
+.review-full .panel{border:0;border-top:1px solid var(--border);border-radius:0;box-shadow:none}
 @media (max-width:640px){
   .wrap{padding:calc(10px + env(safe-area-inset-top, 0px))
     calc(8px + env(safe-area-inset-right, 0px)) calc(42px + env(safe-area-inset-bottom, 0px))
@@ -166,6 +239,13 @@ tbody tr:hover td .lnk{text-decoration:underline}
     calc(8px + env(safe-area-inset-right, 0px)) 8px calc(8px + env(safe-area-inset-left, 0px))}
   .dlg-card{padding:10px;border-radius:10px}
   .navArrow{width:28px;height:60px;font-size:20px;opacity:.45}
+  .review-date{text-align:left;margin-top:0}
+  .review-gate-main{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .review-section{padding:12px;border-radius:13px}
+  .review-split{grid-template-columns:1fr}
+  .review-dim{grid-template-columns:74px 1fr 46px}
+  .review-anchor-grid{grid-template-columns:1fr}
+  .review-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:380px){
   .grid{grid-template-columns:1fr}
@@ -207,7 +287,6 @@ tbody tr:hover td .lnk{text-decoration:underline}
   <button type="button" data-tab="watch">自选池</button>
   <button type="button" data-tab="op">当日复盘</button>
 </div>
-
 <section id="tab-auction" hidden>
   <div class="grid" id="aucCards"></div>
   <div class="bar">
@@ -391,7 +470,48 @@ tbody tr:hover td .lnk{text-decoration:underline}
 </section>
 
 <section id="tab-op" hidden>
-  <div class="panel md" id="opinion"></div>
+  <div class="review-shell">
+    <div class="review-section">
+      <h2>关键指标</h2>
+      <div class="review-metrics" id="reviewMetrics"></div>
+    </div>
+    <div class="review-section">
+      <div class="review-section-head">
+        <div>
+          <div class="review-kicker dark">MARKET GATE</div>
+          <h2>市场闸门</h2>
+        </div>
+        <div class="review-date" id="reviewDate"></div>
+      </div>
+      <div id="reviewGate"></div>
+    </div>
+    <div class="review-section">
+      <div class="review-section-head">
+        <div>
+          <div class="review-kicker dark">SENTIMENT &amp; CYCLE</div>
+          <h2>情绪五维与周期节点</h2>
+        </div>
+        <span class="review-badge" id="reviewPhaseBadge"></span>
+      </div>
+      <div class="review-split">
+        <div class="review-dims" id="reviewDims"></div>
+        <div class="review-cycle" id="reviewCycle"></div>
+      </div>
+    </div>
+    <div class="review-section">
+      <div class="review-section-head">
+        <div>
+          <div class="review-kicker dark">EXECUTION</div>
+          <h2>次日执行结论</h2>
+        </div>
+      </div>
+      <div id="reviewExecution"></div>
+    </div>
+    <details class="review-full">
+      <summary>展开完整文字复盘</summary>
+      <div class="panel md" id="opinion"></div>
+    </details>
+  </div>
 </section>
 
 <div class="foot" id="foot"></div>
@@ -936,16 +1056,6 @@ tbody tr:hover td .lnk{text-decoration:underline}
     /* 一、情绪总览 */
     L.push('### 一、' + c.date + ' 当日情绪总览');
     L.push('');
-    L.push('| 指标 | 当日 | 前一交易日 |');
-    L.push('|---|---|---|');
-    var rows = [['涨停家数', 'zt', 0], ['跌停家数', 'dt', 0], ['炸板家数', 'zb', 0],
-      ['炸板率', 'zb_rate', 1], ['最高连板', 'max_lb', 0], ['连板家数(≥2板)', 'lianban', 0],
-      ['昨日涨停今日均收', 'prev_zt_avg', 2], ['晋级率', 'promote_rate', 1]];
-    rows.forEach(function (r) {
-      var unit = (r[1].indexOf('rate') >= 0 || r[1] === 'prev_zt_avg') ? '%' : '';
-      L.push('| ' + r[0] + ' | ' + num(cur[r[1]], r[2]) + unit + ' | ' + num(prev[r[1]], r[2]) + unit + ' |');
-    });
-    L.push('');
     var ztV = cur.zt || 0, dtV = cur.dt || 0, zbR = cur.zb_rate || 0, avgR = cur.prev_zt_avg;
     var tone = (ztV >= 80 || (ztV >= 60 && (cur.max_lb || 0) >= 5))
       ? '情绪偏热：涨停家数或连板高度处在近端高位，次日重点防分歧。'
@@ -1222,6 +1332,22 @@ tbody tr:hover td .lnk{text-decoration:underline}
     });
   }
 
+  function fetchIndexes() {
+    var defs = [
+      ['sh000001', '上证指数'], ['sz399001', '深证成指'], ['sz399006', '创业板指']
+    ];
+    return E.poolMap(defs, function (x) {
+      return E.kline(x[0], 5).then(function (bars) {
+        if (!bars || bars.length < 2) return null;
+        var a = bars[bars.length - 2], b = bars[bars.length - 1];
+        return { symbol: x[0], name: x[1], date: b.date,
+                 pct: a.c ? +((b.c / a.c - 1) * 100).toFixed(2) : null };
+      });
+    }, 3).then(function (list) {
+      return list.filter(Boolean);
+    });
+  }
+
   /* ------------------------------------------------------------ 池子 */
   function fetchPools(dates, cb) {
     var jobs = [];
@@ -1311,14 +1437,20 @@ tbody tr:hover td .lnk{text-decoration:underline}
   }
 
   function phaseOf(rows) {
-    if (!rows.length) return '待判断';
+    if (!rows.length) return '冰点';
     var last = rows[rows.length - 1];
-    var zt = last.zt, lb = last.max_lb;
-    if (zt >= 80 && lb >= 5) return '高潮/加速后段';
-    if (zt >= 60 && lb >= 4) return '升温—加速';
-    if (zt >= 45) return '修复/发酵';
-    if (zt >= 25) return '分歧震荡';
-    return '冰点/退潮';
+    var prev = rows.length > 1 ? rows[rows.length - 2] : null;
+    var zt = last.zt || 0, dt = last.dt || 0, lb = last.max_lb || 0;
+    var avg = isNum(last.prev_zt_avg) ? last.prev_zt_avg : 0;
+    var collapsed = prev && prev.zt >= 45 && zt <= prev.zt * 0.6;
+    var leaderBroke = prev && prev.max_lb >= 4 && lb < prev.max_lb && avg < 0;
+    if ((dt >= 15 && (prev && prev.zt >= 45 || lb >= 4)) ||
+        (avg <= -1 && prev && prev.zt >= 45) || collapsed || leaderBroke) {
+      return '退潮';
+    }
+    if (zt < 25 || (zt < 30 && lb <= 3)) return '冰点';
+    if (zt >= 60 && lb >= 4 && avg >= 0) return '高潮';
+    return '修复';
   }
 
   /* ------------------------------------------------------------ 晋级率 */
@@ -1345,6 +1477,76 @@ tbody tr:hover td .lnk{text-decoration:underline}
       });
     });
     return out;
+  }
+
+  function buildCycle(emotion, lmap, poolDates, pools, dt, phase) {
+    var last = emotion.length ? emotion[emotion.length - 1] : {};
+    var leaders = Object.keys(lmap || {}).map(function (k) { return lmap[k]; });
+    leaders.sort(function (a, b) { return (b.lb || 0) - (a.lb || 0) ||
+      String(b.date || '').localeCompare(String(a.date || '')); });
+    var dragons = leaders.filter(function (L) {
+      return L.lb >= 5 && !L.news_one_word &&
+        (L.drawdown === null || L.drawdown === undefined || L.drawdown >= -30);
+    });
+    var dragon = dragons.length ? dragons[0] : null;
+    var todayZt = ((pools[dt] || {}).zt || []);
+    var active = {};
+    todayZt.forEach(function (x) { active[E.symOf(x.c, x.m)] = x.lbc || 1; });
+    leaders.forEach(function (L) { L.today_zt = active[L.symbol] || 0; });
+    var dragonActive = !!(dragon && active[dragon.symbol] >= 5);
+    var breakAge = dragon && dragon.days_since !== null && dragon.days_since !== undefined
+      ? dragon.days_since : null;
+    var mids = dragon ? leaders.filter(function (L) {
+      return L.lb >= 3 && L.lb <= 4 && String(L.date || '') <= String(dragon.date || '');
+    }) : [];
+    var mid3 = mids.filter(function (L) { return L.lb === 3; });
+    var mid4 = mids.filter(function (L) { return L.lb === 4; });
+    var clear3 = mid3.filter(function (L) { return L.mid_cleared; }).length;
+    var clear4 = mid4.filter(function (L) { return L.mid_cleared; }).length;
+    var left3 = mid3.length - clear3, left4 = mid4.length - clear4;
+    var midText = '三板' + (!mid3.length ? '无样本' : (left3 === 0 ? '已出清' : '未出清（剩' + left3 + '只）')) +
+      ' · 四板' + (!mid4.length ? '无样本' : (left4 === 0 ? '已出清' : '未出清（剩' + left4 + '只）'));
+    var excludedOneWord = leaders.filter(function (L) { return L.news_one_word; }).length;
+    var state = phase || '修复', substate = '', position = '3~5成，只做最强', note = '';
+    if (dragonActive) {
+      state = '高潮';
+      substate = '龙头延续';
+      position = '5~8成，只做龙头及同主线核心';
+      note = dragon.name + '仍在' + dragon.lb + '板延续';
+    } else if (dragon && breakAge !== null && breakAge >= 1 && breakAge <= 3) {
+      state = '退潮';
+      substate = 'DAY' + breakAge;
+      position = '0成，只观察不接力';
+      note = dragon.name + '断板后第' + breakAge + '个交易日；' + midText +
+        '；3~4板老周期中位股禁做';
+    } else if (last.zt < 25 && (last.max_lb || 0) <= 3) {
+      state = '冰点';
+      substate = '高低切试错';
+      position = '1~3成，只做1进2或2进3';
+      note = '市场高度压缩，优先低位做强';
+    } else if (phase === '高潮') {
+      substate = '发酵/加速';
+      position = '5~7成，聚焦主线龙头';
+      note = '赚钱效应扩散，但只做主线最强';
+    } else if (phase === '退潮') {
+      substate = '中位出清';
+      position = '0成，等待出清完成';
+      note = '亏钱效应占优；' + midText;
+    } else if (phase === '冰点') {
+      substate = '冰点试错';
+      position = '1~3成，只做低位最强';
+      note = midText;
+    }
+    return {
+      state: state, substate: substate, position: position, note: note,
+      dragon: dragon ? { symbol: dragon.symbol, name: dragon.name, lb: dragon.lb, date: dragon.date } : null,
+      break_age: breakAge, dragon_active: dragonActive, phase: phase || '',
+      mid_lb: last.lianban || 0, mid_total: mids.length,
+      mid3_total: mid3.length, mid3_left: left3, mid3_cleared: mid3.length > 0 && left3 === 0,
+      mid4_total: mid4.length, mid4_left: left4, mid4_cleared: mid4.length > 0 && left4 === 0,
+      mid_text: midText,
+      excluded_one_word: excludedOneWord
+    };
   }
 
   /* ------------------------------------------------------------ 模式一锚定池 */
@@ -1399,12 +1601,25 @@ tbody tr:hover td .lnk{text-decoration:underline}
         if (cA) c10 = +((cNow / cA - 1) * 100).toFixed(1);
         if (cB) c20 = +((cNow / cB - 1) * 100).toFixed(1);
       }
+      var downLimit = -E.limitPct(s);
+      var downRun = 0, maxDownRun = 0;
+      if (bars) {
+        for (var rb = Math.max(1, bars.length - 21); rb < bars.length; rb++) {
+          var rp = bars[rb - 1].c ? (bars[rb].c / bars[rb - 1].c - 1) * 100 : 0;
+          if (rp <= downLimit + 0.5) {
+            downRun++;
+            if (downRun > maxDownRun) maxDownRun = downRun;
+          } else downRun = 0;
+        }
+      }
       out.push({
         symbol: s, name: x.n, lbc: x.lbc, td: tb1.td, tb: tb1.tb,
         fbt: x.fbt, lbt: x.lbt, zbc: x.zbc || 0,
         hs: x.hs, amount: x.amount, fund: x.fund, ltsz: x.ltsz,
         close: q.close || null,                       // 当日收盘（=涨停价），用来算次日打板价
         chg10: c10, chg20: c20,
+        a_kill: maxDownRun >= 3, max_down_run: maxDownRun,
+        tail_steal: (+(x.fbt || 0) >= 145000 && +(x.hs || 0) < 5),
         bk: x.hybk || '', yizi: !!yz, tags: tags, group: '涨停',
         today_pct: isNum(q.pct) ? q.pct : null,
         km: (q.high && q.close) ? (q.high - q.close) / q.close * 100 : null
@@ -1849,7 +2064,9 @@ tbody tr:hover td .lnk{text-decoration:underline}
       var ctx = {};
       var t0 = Date.now();
       progress(cb, '① 取交易日…', 0.02);
-      return tradeDates().then(function (dates) {
+      return Promise.all([tradeDates(), fetchIndexes()]).then(function (init) {
+        var dates = init[0];
+        ctx.indexes = init[1];
         ctx.poolDates = dates.slice(-E.POOL_DAYS);
         return fetchPools(ctx.poolDates, cb);
       }).then(function (pools) {
@@ -1977,6 +2194,15 @@ tbody tr:hover td .lnk{text-decoration:underline}
             var pc = bars[st - 1].c;
             if (pc && (bars[st].c / pc - 1) * 100 >= 9.2) st--; else break;
           }
+          var runBoards = 0, oneWordBoards = 0;
+          for (var rb2 = st; rb2 <= pi; rb2++) {
+            var rpc2 = rb2 > 0 && bars[rb2 - 1].c ? bars[rb2 - 1].c : 0;
+            if (rpc2 && (bars[rb2].c / rpc2 - 1) * 100 >= 9.2) {
+              runBoards++;
+              if (bars[rb2].o === bars[rb2].h && bars[rb2].h === bars[rb2].l &&
+                  bars[rb2].l === bars[rb2].c) oneWordBoards++;
+            }
+          }
           L.first = bars[st].date;
           L.days_since = bars.length - 1 - pi;
           // 10 日涨幅（异动监管判断用）
@@ -1995,13 +2221,24 @@ tbody tr:hover td .lnk{text-decoration:underline}
           var peakHigh = bars[hiRel2].h;
           var ma5x = E.maOf(bars, 5), ma10x = E.maOf(bars, 10), ma20x = E.maOf(bars, 20);
           L.peak_high = +peakHigh.toFixed(2);
+          var qAnchor = (ctx.snap && ctx.snap[s]) || {};
+          L.current = qAnchor.close || cur2;
+          L.today_pct = isNum(qAnchor.pct) ? qAnchor.pct : null;
           L.drawdown = peakHigh ? +((cur2 / peakHigh - 1) * 100).toFixed(1) : null;
           L.trend_up = !!(cur2 >= bars[pi].c && ma5x && ma10x && ma20x &&
                           cur2 >= ma5x && ma5x >= ma10x && ma10x >= ma20x * 0.995);
           L.is_high_board = L.lb >= 6;
-          L.anchor_reason = L.is_high_board ? (L.lb + '板高位龙头')
-            : (L.trend_up ? '断板后趋势上行' : '');
-          L.anchor_ok = L.drawdown === null || L.drawdown >= -30;
+          L.one_word_count = oneWordBoards;
+          L.board_run = runBoards;
+          L.one_word_ratio = runBoards ? +(oneWordBoards / runBoards).toFixed(2) : 0;
+          L.news_one_word = !!(L.lb >= 6 && (oneWordBoards >= 3 || L.one_word_ratio >= 0.6));
+          L.above_ma10 = !!(ma10x && cur2 >= ma10x);
+          L.mid_cleared = !!(L.lb >= 3 && L.lb <= 4 &&
+                             ((L.drawdown !== null && L.drawdown <= -15) || !L.above_ma10));
+          L.anchor_reason = L.news_one_word ? '连续一字高标·不作情绪锚定'
+            : (L.is_high_board ? (L.lb + '板高位龙头')
+              : (L.trend_up ? '断板后趋势上行' : ''));
+          L.anchor_ok = (L.drawdown === null || L.drawdown >= -30) && !L.news_one_word;
           L.anchor_qualified = L.anchor_ok && (L.is_high_board || (L.lb >= 4 && L.trend_up));
           L.anchor_score = (L.is_high_board ? 1000 : 500) + L.lb * 20 +
             Math.max(0, 16 - (L.days_since || 0)) * 2 + Math.max(0, L.chg10 || 0);
@@ -2012,6 +2249,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
             return (b.anchor_score || 0) - (a.anchor_score || 0) ||
                    (b.lb || 0) - (a.lb || 0) || (a.days_since || 0) - (b.days_since || 0);
           }).slice(0, 10);
+        var cycle = buildCycle(emotion, lmap, ctx.poolDates, ctx.pools, ctx.dt, phase);
         var ladder = buildLadder(ctx.poolDates, ctx.pools, ctx.dt);
         var m2 = buildMode2(ctx.poolDates, ctx.pools, ctx.snap, ctx.kl);
         var monitor = [];
@@ -2106,9 +2344,56 @@ tbody tr:hover td .lnk{text-decoration:underline}
         monitor = monitor.filter(function (x) { return allowed(x.symbol); });
         var ztToday = ((ctx.pools[ctx.dt] || {}).zt || []).length;
         var dtToday = ((ctx.pools[ctx.dt] || {}).dt || []).length;
+        var zbToday = ((ctx.pools[ctx.dt] || {}).zb || []).length;
+        var pcts = [], upN = 0, downN = 0, flatN = 0;
+        Object.keys(ctx.snap || {}).forEach(function (s3) {
+          var p3 = ctx.snap[s3] && ctx.snap[s3].pct;
+          if (!isNum(p3)) return;
+          pcts.push(p3);
+          if (p3 > 0) upN++; else if (p3 < 0) downN++; else flatN++;
+        });
+        var allAvg = pcts.length ? pcts.reduce(function (a, b) { return a + b; }, 0) / pcts.length : null;
+        var sortedPct = pcts.slice().sort(function (a, b) { return a - b; });
+        var medianPct = sortedPct.length
+          ? sortedPct[Math.floor(sortedPct.length / 2)] : null;
+        var ztSector = {};
+        ((ctx.pools[ctx.dt] || {}).zt || []).forEach(function (x) {
+          var k = x.hybk || '其他';
+          ztSector[k] = (ztSector[k] || 0) + 1;
+        });
+        var strongSectors = Object.keys(ztSector)
+          .filter(function (k) { return ztSector[k] >= 3; })
+          .sort(function (a, b) { return ztSector[b] - ztSector[a]; })
+          .map(function (k) { return { bk: k, n: ztSector[k] }; });
         var prev5 = emotion.slice(-6, -1).map(function (r) { return r.zt; });
         var avgPrev5 = prev5.length ? prev5.reduce(function (a, b) { return a + b; }, 0) / prev5.length : 0;
-        var market = { date: ctx.dt, zt: ztToday, dt: dtToday, prev5: avgPrev5, rising: ztToday > avgPrev5 };
+        var lastEmotion = emotion[emotion.length - 1] || {};
+        var zbRate = (ztToday + zbToday)
+          ? zbToday / (ztToday + zbToday) * 100 : 0;
+        var indexAvg = (ctx.indexes || []).length
+          ? (ctx.indexes.reduce(function (a, x) { return a + (isNum(x.pct) ? x.pct : 0); }, 0) /
+             ctx.indexes.length) : null;
+        var gate = 'yellow';
+        if (dtToday >= 20 || zbRate >= 30 || (isNum(indexAvg) && indexAvg <= -2) ||
+            (dtToday >= 15 && isNum(indexAvg) && indexAvg <= -1) ||
+            (isNum(allAvg) && allAvg <= -2) ||
+            (isNum(lastEmotion.prev_zt_avg) && lastEmotion.prev_zt_avg <= -1)) {
+          gate = 'red';
+        } else if (ztToday > dtToday && isNum(allAvg) && allAvg >= 0 &&
+                   isNum(lastEmotion.prev_zt_avg) && lastEmotion.prev_zt_avg >= 0) {
+          gate = 'green';
+        }
+        var market = {
+          date: ctx.dt, zt: ztToday, dt: dtToday, zb: zbToday,
+          zb_rate: zbRate,
+          prev5: avgPrev5, rising: ztToday > avgPrev5,
+          up: upN, down: downN, flat: flatN, all_avg: allAvg, median_pct: medianPct,
+          prev_zt_avg: lastEmotion.prev_zt_avg, promote_rate: lastEmotion.promote_rate,
+          big_loss_rate: lastEmotion.big_loss_rate, max_lb: lastEmotion.max_lb,
+          strong_sectors: strongSectors, gate: gate,
+          indexes: ctx.indexes || [],
+          index_avg: indexAvg
+        };
         var data = {
           meta: {
             date: ctx.dt, kline: Object.keys(ctx.snap).length, days: emotion.length,
@@ -2117,6 +2402,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
           },
           emotion: emotion,
           anchor: anchor,
+          cycle: cycle,
           ladder: ladder,
           market: market,
           mode2: m2.mode2,
@@ -2386,14 +2672,20 @@ const SERIES = [
 ];
 const ON = { zt: true, dt: true, promote_rate: true, zb_rate: true };
 
-/* 每天的情绪阶段（与 phaseOf 同一套阈值），用于图底部色带 */
-function dayPhase(r) {
-  const zt = r.zt || 0, lb = r.max_lb || 0;
-  if (zt >= 80 && lb >= 5) return ["高潮/加速后段", "#c0392b"];
-  if (zt >= 60 && lb >= 4) return ["升温—加速", "#e67e22"];
-  if (zt >= 45) return ["修复/发酵", "#d4ac0d"];
-  if (zt >= 25) return ["分歧震荡", "#7f8c8d"];
-  return ["冰点/退潮", "#2980b9"];
+/* 每天的情绪阶段（与 phaseOf 同一套四阶段），用于图底部色带 */
+function dayPhase(r, prev) {
+  const zt = r.zt || 0, dt = r.dt || 0, lb = r.max_lb || 0;
+  const avg = (r.prev_zt_avg === null || r.prev_zt_avg === undefined || isNaN(r.prev_zt_avg))
+    ? 0 : Number(r.prev_zt_avg);
+  const collapsed = prev && prev.zt >= 45 && zt <= prev.zt * 0.6;
+  const leaderBroke = prev && prev.max_lb >= 4 && lb < prev.max_lb && avg < 0;
+  if ((dt >= 15 && (prev && prev.zt >= 45 || lb >= 4)) ||
+      (avg <= -1 && prev && prev.zt >= 45) || collapsed || leaderBroke) {
+    return ["退潮", "#7f8c8d"];
+  }
+  if (zt < 25 || (zt < 30 && lb <= 3)) return ["冰点", "#2980b9"];
+  if (zt >= 60 && lb >= 4 && avg >= 0) return ["高潮", "#c0392b"];
+  return ["修复", "#d4ac0d"];
 }
 
 function drawChart() {
@@ -2514,9 +2806,9 @@ function drawChart() {
   hit.addEventListener("mouseleave", leave);
   hit.addEventListener("touchend", leave);
 
-  // 底部情绪阶段色带（红=高潮 橙=加速 黄=修复 灰=分歧 蓝=冰点）
+  // 底部情绪阶段色带（红色高潮、黄色修复、灰色退潮、蓝色冰点）
   rows.forEach((r, i) => {
-    const ph = dayPhase(r);
+    const ph = dayPhase(r, i > 0 ? rows[i - 1] : null);
     const rect = document.createElementNS(NS, "rect");
     rect.setAttribute("x", m.l + (iw / rows.length) * i + 1);
     rect.setAttribute("y", m.t + ih + 5);
@@ -2689,6 +2981,31 @@ function pickBoards(rows, ladders, poolItems) {
       (fr !== null ? "·封单" + fr.toFixed(2) + "%" : "") +
       (zbc ? "·炸" + zbc + "次" : "·未炸") +
       "·同板" + sameN + "只）");
+    const sectorFirstN = (poolItems || []).filter(x => x.group === "涨停" &&
+      (x.lbc || 1) === 1 && ((x.bk || "").trim() || "其他") === bk).length;
+    const capYi = p.ltsz ? p.ltsz / 1e8 : null;
+    const price = p.close || r.price || null;
+    const minTurnover = capYi !== null && capYi < 50 ? 8 : 5;
+    const checks = lb === 1 ? [
+      { k: "首板非一字/T字", v: !p.yizi },
+      { k: "首板换手≥" + minTurnover + "%", v: p.hs != null && p.hs >= minTurnover },
+      { k: "首板成交额≥3亿", v: p.amount != null && p.amount >= 3e8 },
+      { k: "流通市值20~50亿", v: capYi != null && capYi >= 20 && capYi <= 50 },
+      { k: "股价≤20元", v: price != null && price <= 20 },
+      { k: "同题材首板≥3只", v: sectorFirstN >= 3 },
+      { k: "非14:50后偷板", v: !p.tail_steal },
+      { k: "近月无三连跌停A杀", v: !p.a_kill },
+      { k: "竞价高开2%~5%", v: r.pctv >= 2 && r.pctv <= 5 },
+      { k: "二板换手≥10%", v: null },
+      { k: "二板量能较首板+30%", v: null },
+      { k: "9:45前首次封板", v: null }
+    ] : [];
+    let style = lb <= 2 ? "低位做强" : "高位弱转强";
+    let styleWarn = "";
+    if (lb === 1 && r.pctv < 1) styleWarn = "高开不足1%，市场认可偏弱";
+    if (lb === 1 && r.pctv >= 6) styleWarn = "高开≥6%，谨防缩量加速";
+    if (lb >= 3 && p.yizi) styleWarn = "高位一字，筹码未充分交换，只观察不追";
+    if (lb >= 3 && r.pctv >= 6) styleWarn = "高位高开过大，不追一致加速";
     const ztp = r.pre ? +(r.pre * 1.1).toFixed(2) : null;   // 今日涨停价 = 昨收 × 1.1
     out.push({
       symbol: r.symbol, name: r.name, bk: bk, lb: lb,
@@ -2696,7 +3013,11 @@ function pickBoards(rows, ladders, poolItems) {
       hit: ztp, stop: ztp ? +(ztp * 0.95).toFixed(2) : null,
       price: r.price || null,
       strength: strength, fund_ratio: fr, zbc: zbc, same_n: sameN, yizi: !!p.yizi,
-      yijin2: lb === 1,
+      yijin2: lb === 1, style: style, style_warn: styleWarn,
+      checks: checks, check_pass: checks.filter(x => x.v === true).length,
+      check_fail: checks.filter(x => x.v === false).length,
+      sector_first_n: sectorFirstN, cap_yi: capYi, first_turnover: p.hs,
+      first_amount: p.amount, a_kill: !!p.a_kill, tail_steal: !!p.tail_steal,
       score: score, why: why.join("；")
     });
   });
@@ -2712,9 +3033,12 @@ function layerReport(picks) {
   const out = Object.keys(by).map(Number).sort((a, b) => b - a).map(lb => {
     const list = by[lb];
     const fast = list.filter(p => p.yizi || (p.strength || 0) >= 9).length;
-    const best = list.slice().sort((a, b) =>
+    const tradable = lb >= 3 ? list.filter(p => !p.yizi) : list;
+    const candidates = tradable.length ? tradable : list;
+    const best = candidates.slice().sort((a, b) =>
       (b.strength || 0) - (a.strength || 0) || b.score - a.score)[0];
-    return { lb: lb, n: list.length, fast: fast, best: best };
+    return { lb: lb, n: list.length, fast: fast, best: best,
+             all_yizi: lb >= 3 && !tradable.length };
   });
   out.sort((a, b) => (b.fast - a.fast) || (b.lb - a.lb));
   return out;
@@ -2783,6 +3107,9 @@ function ancCurrentList() {
   });
   ancListLoad().forEach(L => {
     if (seen[L.symbol]) return;
+    const meta = (DATA && DATA.anchor && DATA.anchor.leaders || [])
+      .find(x => x.symbol === L.symbol);
+    if (meta && meta.news_one_word) return;
     seen[L.symbol] = 1;
     out.push(Object.assign({ source: "manual", reason: "手动关注" }, L));
   });
@@ -2838,7 +3165,8 @@ function buildAucAnchors(pool, quotes, list) {
              price: (q && q.close) || null,
              source: L.source || "manual", reason: L.reason || "手动关注",
              drawdown: (L.drawdown === undefined ? null : L.drawdown),
-             days_since: (L.days_since === undefined ? null : L.days_since) };
+             days_since: (L.days_since === undefined ? null : L.days_since),
+             news_one_word: !!L.news_one_word };
   });
   // 自动池优先，其次按辨识度和板数排序。
   rows.sort((a, b) => (b.source === "auto" ? 1 : 0) - (a.source === "auto" ? 1 : 0) ||
@@ -2972,19 +3300,27 @@ async function loadAuction() {
   const tTxt = t ? (t.slice(0, 4) + "-" + t.slice(4, 6) + "-" + t.slice(6, 8) + " " +
     t.slice(8, 10) + ":" + t.slice(10, 12)) : "-";
   const clock = aucClockText();
+  const cyc = DATA && DATA.cycle ? DATA.cycle : {};
   cardBox.innerHTML =
     card("情绪锚定判定", dec.verdict, "锚定池 " + ANC.length + " 只；今日反馈 " + dec.total +
       " 只：超预期 " + dec.sup + " / 符合 " + dec.ok + " / 不及预期 " + dec.bad +
       "；加权情绪分 " + (dec.score === null ? "-" : dec.score.toFixed(2)), dec.cls) +
     card("可操作性", dec.action,
       dec.locked ? "依据已锁定的9:25竞价反馈" : "尚未锁定9:25，只显示预判，不执行", dec.cls) +
+    card("周期节点 / 仓位",
+      (cyc.state || "修复") + (cyc.substate ? " · " + cyc.substate : ""),
+      (cyc.position || "等待数据") + (cyc.note ? " · " + cyc.note : "") +
+      (cyc.mid_text && (cyc.note || "").indexOf(cyc.mid_text) < 0 ? " · " + cyc.mid_text : "") +
+      (cyc.excluded_one_word ? " · 已排除连续一字高标" + cyc.excluded_one_word + "只" : ""),
+      cyc.state && /高潮/.test(cyc.state) ? "up" : (/退潮|冰点/.test(cyc.state) ? "down" : "")) +
     card("行情时间", tTxt, clock +
       (clock === "非交易时段" ? " · 这不是竞价数据，判断仅供参考，请在 9:15–9:25 使用本页" : ""));
   // 下面三张表是全池逐只判定（不是情绪结论），计数单独算
   const rSup = rows.filter(r => r.lv === "超预期").length;
   const rOk = rows.filter(r => r.lv === "符合").length;
   const rBad = rows.filter(r => r.lv === "不及预期").length;
-  const autoN = ancAutoList().length, manualN = ancListLoad().length;
+  const autoN = ANC.filter(x => x.source === "auto").length;
+  const manualN = ANC.filter(x => x.source === "manual").length;
   // 竞价页只展示「超预期」名单；符合 / 不及预期只计数（在上面的断言卡里），不再逐只列出
   const groups = [["超预期", rSup, "up"]];
   /* ---------- 分类涨停梯队：找"整体梯队完整"的题材 ---------- */
@@ -2999,7 +3335,7 @@ async function loadAuction() {
       : "还没抓到 9:25 数据，暂显示实时价") + "</span></div>" +
     "<div class='panel'><table id='auc_anchor'></table></div>" +
     "<div class='k' style='margin:-4px 0 10px'>" +
-    "自动主池：近期出现 <b>6板及以上</b> 的高位龙头，以及 <b>4板以上断板后仍在5/10/20日线上方趋势上行</b> 的标的；从阶段高点回撤超过 <b>30%</b> 自动剔除并补位，最多10只。也可以输入代码手动补充，行末「删」当天移除。" +
+    "自动主池：近期出现 <b>6板及以上</b> 的高位龙头，以及 <b>4板以上断板后仍在5/10/20日线上方趋势上行</b> 的标的；从阶段高点回撤超过 <b>30%</b> 自动剔除并补位，最多10只。<b>只有连续一字顶到6板以上的高标不纳入情绪判断，低位一字正常保留</b>。也可以输入代码手动补充，行末「删」当天移除。" +
     "情绪判定只用 <b>9:25</b> 那一刻的竞价数据（抓到后锁定，盘中不再变）。" +
     "超预期过半→情绪超预期；不及预期过半→情绪不及预期；其余→符合预期。" +
     "<b>未涨停</b>的按《情绪流》标准七/八判：高开 ≥0% 算超预期（弱转强/不被核）、-3%~0 符合、<-3% 不及预期；" +
@@ -3012,6 +3348,9 @@ async function loadAuction() {
   /* ---------- 打哪一个：直接在下面的表里标出来 ---------- */
   const picks = pickBoards(rows, ladders, pool.items);
   const playable = picks.filter(p => p.score >= REC_MIN);
+  const first2 = picks.filter(p => p.lb === 1)
+    .sort((a, b) => (b.check_pass || 0) - (a.check_pass || 0) ||
+                    (b.score || 0) - (a.score || 0));
   const recRank = {};
   playable.slice(0, 3).forEach((p, i) => { recRank[p.symbol] = i + 1; });
   // 高度板（3板及以上）就算分数没到 7，也单独标出来观察：3进4/4进5/6板以上不能被漏掉
@@ -3019,6 +3358,9 @@ async function loadAuction() {
   const hiRank = {};
   hiPicks.forEach((p, i) => { hiRank[p.symbol] = i + 1; });
   html += "<div class='k' id='aucPickNote' style='margin:2px 0 12px'></div>";
+  html += "<h3>一进二质量检查（首板 → 二板）</h3>" +
+    "<div class='k'>已确认项带✓，不通过带×，盘后才能确认的项目标“待”。不通过项只作风险提示，暂不直接删除候选。</div>" +
+    "<div class='panel'><table id='auc_y2'></table></div>";
   body.innerHTML = html;
   table("auc_anchor", ANC, [
     { key: "name", label: "锚定标的", left: true },
@@ -3034,6 +3376,22 @@ async function loadAuction() {
     { key: "act", label: "", left: true, render: r =>
         '<button type="button" class="ancDel" data-src="' + esc(r.source) + '" data-sym="' + esc(r.symbol) + '">删</button>' },
   ], { sort: (a, b) => (b.lb || 0) - (a.lb || 0) });
+  table("auc_y2", first2, [
+    { key: "name", label: "首板", left: true },
+    { key: "pctv", label: "竞价高开", num: true, cls: r => cls(r.pctv), render: r => pct(r.pctv, 2) },
+    { key: "style", label: "打法", left: true },
+    { key: "first_turnover", label: "首板换手%", num: true, render: r => num(r.first_turnover, 1) },
+    { key: "first_amount", label: "首板成交额", num: true, render: r => money(r.first_amount) },
+    { key: "cap_yi", label: "流通市值", num: true, render: r => r.cap_yi == null ? "-" : num(r.cap_yi, 1) + "亿" },
+    { key: "sector_first_n", label: "同题材首板", num: true, render: r => r.sector_first_n + "只" },
+    { key: "checks", label: "一进二检查", left: true, render: r =>
+        (r.checks || []).map(c => '<span class="tag ' +
+          (c.v === true ? "ok" : c.v === false ? "bad" : "") + '">' +
+          (c.v === true ? "✓" : c.v === false ? "×" : "待") + esc(c.k) + "</span>").join("") },
+    { key: "style_warn", label: "风险提示", left: true, render: r => r.style_warn ?
+        '<span class="tag bad">' + esc(r.style_warn) + "</span>" : "-" },
+  ], { sort: (a, b) => (b.check_pass || 0) - (a.check_pass || 0) ||
+                       (b.score || 0) - (a.score || 0) });
   const cols = [
     { key: "symbol", label: "代码", left: true },
     { key: "name", label: "名称", left: true, render: r =>
@@ -3084,15 +3442,17 @@ async function loadAuction() {
   const yj2 = picks.filter(p => p.yijin2 && p.score >= 5 && !recRank[p.symbol]).slice(0, 3);
   if (yj2.length) {
     note.innerHTML += "<br><b>一进二候选</b>（昨日首板 → 今日打二板）：" +
-      yj2.map(p => esc(p.name) + "（" + p.score + "分·强度" + p.strength + "，打板价 " + num(p.hit) + "）").join("、") +
+      yj2.map(p => esc(p.name) + "（" + p.score + "分·强度" + p.strength +
+        "·检查" + p.check_pass + "/9，打板价 " + num(p.hit) + "）").join("、") +
       " —— 首板一进二按<b>半仓</b>，封住次日冲高走，没封住次日无条件走。";
   }
   const layers = layerReport(picks);
   if (layers.length) {
     note.innerHTML += "<br><b>按晋级层看强度</b>：" + layers.slice(0, 4).map(L =>
       cn(L.lb) + "进" + cn(L.lb + 1) + "（" + L.lb + "板）" + L.n + "只 · 快封/一字" + L.fast +
-      "只 → 首选 " + esc(L.best.name) + "（强度" + L.best.strength + "）").join("；") +
-      "。<br>同一层里一字/秒板越多，这一层越硬；<b>只打这一层里最强的那个</b>，层弱就整层放弃。";
+      "只 → " + (L.lb <= 2 ? "低位做强：" : L.all_yizi ? "高位全是 一字，整层只观察：" : "高位弱转强：") +
+      esc(L.best.name) + "（强度" + L.best.strength + "）").join("；") +
+      "。<br>1进2、2进3优先高开带量的低吸/首封；3进4以上优先非一字、成交放大后的弱转强，不追高位一致加速。";
   }
   // 只在竞价时段（9:15–9:35）生成/更新今日执行清单，避免盘中/盘后用收盘价覆盖
   const _n = new Date(), _m = _n.getHours() * 60 + _n.getMinutes();
@@ -3442,6 +3802,116 @@ function renderOverview() {
     "<div class='k'>按《情绪流》口径，模式一只做二板及以上；首板不参与打板，这里单独列出便于观察次日一进二。</div>" +
     "<div class='panel'><table id='t_first'></table></div>";
   table("t_first", first, ZTCOLS, { sort: (a, b) => (a.fbt || 9e9) - (b.fbt || 9e9) });
+}
+
+function renderReviewDashboard() {
+  if (!DATA) return;
+  const m = DATA.market || {}, cyc = DATA.cycle || {};
+  const gate = m.gate || "yellow";
+  const valid = v => v !== null && v !== undefined && v !== "" && !isNaN(v);
+  const totalBreadth = (m.up || 0) + (m.down || 0);
+  const leaders = (DATA.anchor && DATA.anchor.leaders) || [];
+  const highLeaders = leaders.filter(x => (x.lb || 0) >= 5);
+  const highHeld = highLeaders.filter(x => (x.today_zt || 0) >= 5);
+  const highBreak = Math.max(0, highLeaders.length - highHeld.length);
+  const highPcts = highLeaders.map(x => x.today_pct).filter(valid);
+  const highAvg = highPcts.length ? highPcts.reduce((a, b) => a + b, 0) / highPcts.length : null;
+  const ztNow = (DATA.anchor && DATA.anchor.pool || []).filter(x => x.group === "涨停");
+  const high3 = ztNow.filter(x => (x.lbc || 1) >= 3);
+  const maxNames = high3.slice().sort((a, b) => (b.lbc || 0) - (a.lbc || 0)).slice(0, 2)
+    .map(x => esc(x.name || "") + "(" + (x.lbc || 1) + "板)").join("、");
+  const idx = m.indexes || [];
+  const idxAvg = valid(m.index_avg) ? Number(m.index_avg) : null;
+  const idxDetail = idx.map(x => x.name + " " + pct(x.pct, 2)).join("；");
+  const upRatio = totalBreadth ? (m.up || 0) / totalBreadth : 0;
+  const status = (label, tone, detail, extra) => ({ label, tone, detail, extra: extra || "" });
+  const dims = [
+    status("1. 指数强弱", idxAvg !== null && idxAvg <= -2 ? "弱" : (idxAvg !== null && idxAvg >= 0 ? "强" : "中性"),
+      idxDetail || "指数数据暂缺", idxAvg === null ? "" : "平均 " + pct(idxAvg, 2)),
+    status("2. 负反馈", (m.dt || 0) >= 15 ? "弱" : ((m.dt || 0) <= 5 && (m.big_loss_rate || 0) < 10 ? "强" : "中性"),
+      "跌停 " + int(m.dt) + "只 · 炸板率 " + num(m.zb_rate, 1) + "%",
+      "高位断板 " + highBreak + "/" + highLeaders.length +
+      (highAvg === null ? "" : " · 均涨 " + pct(highAvg, 2))),
+    status("3. 正反馈", valid(m.prev_zt_avg) && m.prev_zt_avg > 0 ? "强" : (valid(m.prev_zt_avg) && m.prev_zt_avg < 0 ? "弱" : "中性"),
+      "≥3板 " + high3.length + "只 · 最高 " + int(m.max_lb) + "板" + (maxNames ? "（" + maxNames + "）" : ""),
+      "前高龙头保留 " + highHeld.length + "/" + highLeaders.length),
+    status("4. 题材强弱", (m.strong_sectors || []).length >= 3 ? "强" : ((m.strong_sectors || []).length ? "中性" : "弱"),
+      (m.strong_sectors || []).slice(0, 3).map(x => x.bk + " " + x.n + "家").join("；") || "没有3家以上涨停的强题材"),
+    status("5. 情绪强弱", upRatio >= 0.5 ? "强" : (upRatio >= 0.35 ? "中性" : "弱"),
+      "上涨/下跌 " + int(m.up) + "/" + int(m.down) + " · 涨停/跌停 " + int(m.zt) + "/" + int(m.dt),
+      "炸板率 " + num(m.zb_rate, 1) + "%"),
+  ];
+  const weakN = dims.filter(x => x.tone === "弱").length;
+  const strongN = dims.filter(x => x.tone === "强").length;
+  const confidence = (gate === "red" && weakN >= 3) || (gate === "green" && strongN >= 3) ? "高" : "中";
+  $("#reviewDate").textContent = DATA.meta ? DATA.meta.date + " · " + DATA.meta.generated : "";
+  const gateText = gate === "red" ? "红灯 · 暂停开仓"
+    : gate === "green" ? "绿灯 · 可执行" : "黄灯 · 谨慎执行";
+  $("#reviewGate").className = "review-gate gate-" + gate;
+  $("#reviewGate").innerHTML =
+    '<div class="review-gate-head"><i class="traffic"></i><span>' + esc(gateText) + '</span></div>' +
+    '<div class="review-gate-main">' +
+      '<div class="review-gate-stat"><span>涨停家数</span><b>' + int(m.zt) + '</b></div>' +
+      '<div class="review-gate-stat"><span>跌停家数</span><b>' + int(m.dt) + '</b></div>' +
+      '<div class="review-gate-stat"><span>炸板率</span><b>' + num(m.zb_rate, 1) + '%</b></div>' +
+      '<div class="review-gate-stat"><span>昨日涨停均涨</span><b>' + pct(m.prev_zt_avg, 2) + '</b></div>' +
+    '</div>' +
+    '<div class="review-sub" style="margin-top:9px">上涨/下跌 ' + int(m.up) + '/' + int(m.down) +
+      ' · 全市场中位数 ' + pct(m.median_pct, 2) + ' · 强题材 ' +
+      ((m.strong_sectors || []).slice(0, 3).map(x => x.bk + x.n + "家").join("、") || "无") + '</div>';
+  $("#reviewPhaseBadge").textContent =
+    (cyc.state || DATA.meta.phase || "修复") + (cyc.substate ? " · " + cyc.substate : "");
+  $("#reviewPhaseBadge").className = "review-badge " +
+    (/退潮|冰点/.test(cyc.state || "") ? "red" : (/高潮/.test(cyc.state || "") ? "green" : ""));
+  $("#reviewDims").innerHTML =
+    '<div class="review-diagnosis"><b>自动节点：' + esc(cyc.state || DATA.meta.phase || "修复") +
+      ' · 置信度：' + confidence + ' · 情绪闸门：' + esc(gateText) + '</b>' +
+      '<div>触发条件：高标反馈、封板质量与市场广度至少两项转弱；多数个股反馈不足时视为风险节点。</div>' +
+      '<div>修复观察：高位辨识度龙头恢复正反馈，且前期强势题材重新出现涨停扩散。</div></div>' +
+    '<div class="review-anchor-grid">' + dims.map(d => {
+      const c = d.tone === "强" ? "good" : (d.tone === "弱" ? "bad" : "warn");
+      return '<div class="review-anchor ' + c + '"><div class="anchor-head"><b>' +
+        esc(d.label) + '</b><span>' + esc(d.tone) + '</span></div>' +
+        '<div class="anchor-detail">' + esc(d.detail) + '</div>' +
+        (d.extra ? '<div class="anchor-extra">' + esc(d.extra) + '</div>' : '') + '</div>';
+    }).join("") + '</div>';
+  $("#reviewCycle").innerHTML =
+    '<div class="review-kicker dark">CYCLE GATE</div>' +
+    '<div class="review-cycle-state">' + esc(cyc.state || DATA.meta.phase || "修复") +
+      (cyc.substate ? '<span class="k" style="font-size:12px;margin-left:6px">' +
+        esc(cyc.substate) + '</span>' : '') + '</div>' +
+    '<div class="review-cycle-row"><span>建议仓位</span><b>' + esc(cyc.position || "-") + '</b></div>' +
+    '<div class="review-cycle-row"><span>龙头/空间板</span><b>' +
+      esc(cyc.dragon ? cyc.dragon.name + " " + cyc.dragon.lb + "板" : "-") + '</b></div>' +
+    '<div class="review-cycle-row"><span>断板天数</span><b>' +
+      (cyc.break_age === null || cyc.break_age === undefined ? "-" : cyc.break_age + "日") + '</b></div>' +
+    '<div class="review-cycle-row"><span>中位出清</span><b>' +
+      esc(cyc.mid_text || "-") + '</b></div>' +
+    '<div class="review-cycle-row"><span>一字高标排除</span><b>' + int(cyc.excluded_one_word || 0) + '只</b></div>';
+  let execTone = "warn", execTitle = "等待9:25复核", execText = "当前只有收盘预案，不能直接开仓；9:25根据情绪锚定池强弱决定。";
+  if (gate === "red" || /退潮/.test(cyc.state || "")) {
+    execTone = "bad";
+    execTitle = "当前时点没有可执行的新买点";
+    execText = "市场闸门或周期节点风险较高。候选只用于观察，不能升级为交易名单。";
+  } else if (gate === "green" && /高潮/.test(cyc.state || "")) {
+    execTone = "good";
+    execTitle = "可准备执行，但仍需9:25确认";
+    execText = "只聚焦主线龙头和最强晋级层；竞价不及预期立即取消。";
+  }
+  $("#reviewExecution").innerHTML =
+    '<div class="review-execution ' + execTone + '"><div class="review-execution-title">' +
+      esc(execTitle) + '</div><div>' + esc(execText) + '</div></div>';
+  const metrics = [
+    ["涨停 / 跌停", int(m.zt) + " / " + int(m.dt), "封板率 " + num(m.zt / Math.max(1, m.zt + m.zb) * 100, 1) + "%"],
+    ["上涨 / 下跌", int(m.up) + " / " + int(m.down), "中位数 " + pct(m.median_pct, 2)],
+    ["最高连板", int(m.max_lb) + " 板", "晋级率 " + num(m.promote_rate, 1) + "%"],
+    ["昨日涨停均涨", pct(m.prev_zt_avg, 2), "大面率 " + num(m.big_loss_rate, 1) + "%"],
+    ["炸板家数", int(m.zb), "炸板率 " + num(m.zb_rate, 1) + "%"],
+    ["强题材", String((m.strong_sectors || []).length), (m.strong_sectors || []).slice(0, 2).map(x => x.bk).join("、") || "无"],
+  ];
+  $("#reviewMetrics").innerHTML = metrics.map(x =>
+    '<div class="review-metric"><div class="m-label">' + esc(x[0]) + '</div>' +
+    '<div class="m-value">' + esc(x[1]) + '</div><div class="m-note">' + esc(x[2]) + '</div></div>').join("");
 }
 
 const ZTCOLS = [
@@ -4368,7 +4838,7 @@ function applyData(payload) {
   $("#foot").textContent = "数据：腾讯日K / 新浪清单 / 东方财富涨停池 · 仅供复盘，不构成投资建议" +
     (INLINE ? " · 静态快照" : "");
   try { sigRecordToday(); sigCheckHits(); } catch (e) { /* 记录失败不影响页面 */ }
-  renderOverview(); renderM1(); renderM2();
+  renderOverview(); renderM1(); renderM2(); renderReviewDashboard();
   try { renderSig(); } catch (e) { }
   try { renderTrade(); } catch (e) { /* 交易页异常不影响其它页 */ }
   try { renderPlanReview().catch(() => { }); } catch (e) { }
@@ -4397,6 +4867,9 @@ function applyData(payload) {
           symbol: p.symbol, name: p.name, group: p.group, lbc: p.lbc,
           fbt: p.fbt, lbt: p.lbt, zbc: p.zbc, today_pct: p.today_pct, km: p.km,
           td: p.td, tb: p.tb, isZb: p.isZb,          // 竞价页的「几天几板」列要用
+          hs: p.hs, amount: p.amount, ltsz: p.ltsz, yizi: !!p.yizi,
+          a_kill: !!p.a_kill, tail_steal: !!p.tail_steal,
+          chg10: p.chg10, chg20: p.chg20,
           close: p.close,                            // 次日打板预案要用
           bk: p.bk            // 竞价页的「分类涨停梯队」按板块分组，这个字段不能丢
         }))
@@ -4722,6 +5195,10 @@ $("#tab-auction").addEventListener("click", async e => {
     const v = q[sym] || {};
     const poolRow = ((DATA.anchor && DATA.anchor.pool) || []).find(p => p.symbol === sym) || null;
     const ld = ((DATA.anchor && DATA.anchor.leaders) || []).find(L => L.symbol === sym) || {};
+    if (ld.news_one_word) {
+      alert("该股连续一字顶到6板以上，可能是重组或利好连续顶板，不能作为情绪锚定");
+      return;
+    }
     list.push({ symbol: sym, name: v.name || (poolRow && poolRow.name) || c,
       lb: (poolRow && poolRow.lbc) || ld.lb || 1,
       date: ld.date, days_since: ld.days_since,
