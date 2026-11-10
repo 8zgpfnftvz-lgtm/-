@@ -5026,12 +5026,87 @@ function firstBoardQuality(r, allFirst) {
   };
 }
 
+/* ---------- 同花顺大盘成交额 ---------- */
+const THS_TURNOVER_KEY = "thsMarketTurnoverV1";
+let _thsTurnoverBusy = false;
+
+function turnoverText(v) {
+  if (v === null || v === undefined || !Number.isFinite(Number(v))) return "—";
+  const n = Number(v);
+  if (Math.abs(n) >= 1e12) return (n / 1e12).toFixed(2) + " 万亿";
+  return (n / 1e8).toFixed(0) + " 亿";
+}
+
+function renderMarketTurnover(data) {
+  const box = document.getElementById("mktTurnCard");
+  if (!box || !data || !data.amount) return;
+  const diff = Number(data.amount) - Number(data.prevAmount || 0);
+  let sub = "较昨日基本持平", tone = "";
+  if (diff > 0) { sub = "较昨日放量 " + turnoverText(diff); tone = "up"; }
+  else if (diff < 0) { sub = "较昨日缩量 " + turnoverText(Math.abs(diff)); tone = "down"; }
+  box.innerHTML =
+    '<div class="k">大盘成交额</div>' +
+    '<div class="v ' + tone + '">' + turnoverText(data.amount) + '</div>' +
+    '<div class="k">' + sub + ' · ' + esc(data.day || "") + ' · 同花顺</div>';
+}
+
+async function thsIndexAmounts(code) {
+  const url = "https://d.10jqka.com.cn/v6/line/zs_" + code + "/01/last.js";
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error("同花顺 HTTP " + response.status);
+  const text = await response.text();
+  const a = text.indexOf("("), b = text.lastIndexOf(")");
+  if (a < 0 || b <= a) throw new Error("同花顺数据格式异常");
+  const payload = JSON.parse(text.slice(a + 1, b));
+  const rows = String(payload.data || "").split(";").filter(Boolean).map(line => {
+    const p = line.split(",");
+    return { day: p[0], amount: Number(p[6]) || 0 };
+  });
+  const map = {};
+  rows.forEach(x => { if (x.day && x.amount) map[x.day] = x.amount; });
+  return map;
+}
+
+async function loadMarketTurnover() {
+  const box = document.getElementById("mktTurnCard");
+  if (!box || _thsTurnoverBusy) return;
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(THS_TURNOVER_KEY) || "null"); } catch (e) { }
+  if (cached && cached.amount) renderMarketTurnover(cached);
+  if (cached && cached.ts && Date.now() - cached.ts < 10 * 60 * 1000) return;
+  _thsTurnoverBusy = true;
+  try {
+    const [sh, sz] = await Promise.all([thsIndexAmounts("1A0001"), thsIndexAmounts("399106")]);
+    const common = Object.keys(sh).filter(d => sz[d]).sort();
+    if (common.length < 2) throw new Error("同花顺缺少连续两日数据");
+    const day = common[common.length - 1], prev = common[common.length - 2];
+    const dayText = day.slice(0, 4) + "-" + day.slice(4, 6) + "-" + day.slice(6, 8);
+    const prevText = prev.slice(0, 4) + "-" + prev.slice(4, 6) + "-" + prev.slice(6, 8);
+    const data = {
+      day: dayText, prevDay: prevText, amount: sh[day] + sz[day],
+      prevAmount: sh[prev] + sz[prev], ts: Date.now()
+    };
+    try { localStorage.setItem(THS_TURNOVER_KEY, JSON.stringify(data)); } catch (e) { }
+    renderMarketTurnover(data);
+  } catch (e) {
+    if (box && !cached) {
+      box.innerHTML = '<div class="k">大盘成交额</div><div class="v">—</div>' +
+        '<div class="k">同花顺数据暂时读取失败</div>';
+    }
+  } finally {
+    _thsTurnoverBusy = false;
+  }
+}
+
 /* ---------- 各页渲染 ---------- */
 function renderOverview() {
   const m = DATA.meta, em = DATA.emotion, last = em[em.length - 1] || {};
   const ladders = sectorLadders((DATA.anchor && DATA.anchor.pool) || []);
   const full = ladders.filter(r => r.complete);
   $("#stats").innerHTML =
+    '<div class="card" id="mktTurnCard">' +
+      '<div class="k">大盘成交额</div><div class="v">读取中…</div>' +
+      '<div class="k">同花顺 · 沪深两市合计</div></div>' +
     card("情绪阶段", esc(m.phase), "基准日 " + esc(m.date)) +
     card("涨停 / 跌停", int(last.zt) + " <span class='k'>/ " + int(last.dt) + "</span>",
       "炸板 " + int(last.zb) + " 家 · 炸板率 " + num(last.zb_rate, 1) + "%") +
@@ -5040,6 +5115,7 @@ function renderOverview() {
       cls(last.prev_zt_avg)) +
     card("完整梯队题材", full.length + " 个",
       full.length ? full.map(r => r.bk).join("、") : "今天没有完整梯队", full.length ? "up" : "");
+  loadMarketTurnover();
 
   /* 近 5 年实测结论（2021-10 ~ 2026-09，主板；不涉及 MACD/金叉） */
   $("#btStats").innerHTML =
