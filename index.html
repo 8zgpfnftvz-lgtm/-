@@ -433,16 +433,18 @@ tbody tr:hover td .lnk{text-decoration:underline}
   padding:11px 13px;border-bottom:1px solid var(--border)}
 .plan-head h2{margin:0;font-size:16px}
 .plan-body{padding:11px 13px 13px;overflow:auto}
+.plan-datebar{display:flex;align-items:center;gap:7px;margin-bottom:8px;flex-wrap:wrap}
+.plan-datebar label{font-size:11px;color:var(--muted);font-weight:600}
+#planDate{border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);
+  padding:6px 9px;font:inherit;font-size:12px;min-width:150px;flex:1}
+#planToday{padding:5px 10px;font-size:11.5px}
 .plan-meta{font-size:10.5px;color:var(--muted);margin-bottom:7px;line-height:1.5}
-.plan-text{white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.65;
-  max-height:38vh;overflow:auto;border:1px solid var(--border);border-radius:10px;
-  padding:10px;background:var(--soft)}
-.plan-source{display:inline-block;margin-top:7px;font-size:11px}
-.plan-note-title{font-size:12px;font-weight:700;margin:12px 0 5px}
-#planNote{width:100%;min-height:150px;resize:vertical;border:1px solid var(--border);
+#planNote{width:100%;min-height:42vh;resize:vertical;border:1px solid var(--border);
   border-radius:10px;padding:9px;background:var(--bg);color:var(--fg);font-size:14px;line-height:1.55}
-.plan-note-bar{display:flex;align-items:center;gap:7px;margin-top:7px}
+#planNote[readonly]{background:var(--soft);color:var(--fg);opacity:.92}
+.plan-note-bar{display:flex;align-items:center;gap:7px;margin-top:7px;flex-wrap:wrap}
 .plan-note-bar .k{margin-left:auto}
+.plan-history-note{margin-top:8px;color:var(--muted);font-size:10.5px;line-height:1.5}
 .limit-board-dist{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:9px}
 .limit-dist-item{border:1px solid var(--border);border-radius:9px;padding:7px 8px;background:var(--soft)}
 .limit-dist-item span{font-size:10.5px;color:var(--muted)}
@@ -578,7 +580,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
   .plan-fab{right:10px;bottom:78px;width:50px;height:50px;border-radius:14px}
   .plan-fab svg{width:32px;height:32px}
   .plan-dialog{max-height:92vh}
-  .plan-text{max-height:35vh}
+  #planNote{min-height:48vh;font-size:16px}
   .limit-board-dist{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
   .limit-dist-item{padding:5px 3px;border-radius:7px;text-align:center}
   .limit-dist-item span{font-size:9px;line-height:1.2}
@@ -975,7 +977,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
 <div class="foot" id="foot"></div>
 </div>
 
-<button type="button" class="plan-fab" id="planFab" title="盘前计划与便签（可拖动）" aria-label="打开盘前计划与便签">
+<button type="button" class="plan-fab" id="planFab" title="盘前计划（可拖动）" aria-label="打开盘前计划">
   <svg viewBox="0 0 32 32" aria-hidden="true">
     <path class="line" d="M4 24 L10.5 17.5 L15.5 20.5 L27 8"></path>
     <path class="tip" d="M21 8 H27 V14"></path>
@@ -984,20 +986,23 @@ tbody tr:hover td .lnk{text-decoration:underline}
 <div id="planModal" hidden>
   <div class="plan-dialog" role="dialog" aria-modal="true" aria-labelledby="planTitle">
     <div class="plan-head">
-      <h2 id="planTitle">最新盘前计划</h2>
+      <h2 id="planTitle">盘前计划</h2>
       <button type="button" id="planClose">关闭</button>
     </div>
     <div class="plan-body">
-      <div class="plan-meta" id="planMeta">读取中…</div>
-      <div class="plan-text" id="planText">暂无计划缓存</div>
-      <a class="plan-source" id="planSource" href="#" target="_blank" rel="noopener" hidden>打开原帖</a>
-      <div class="plan-note-title">我的便签</div>
-      <textarea id="planNote" placeholder="输入自己的盘前判断、交易计划或盘中提醒，内容自动保存在本机。"></textarea>
+      <div class="plan-datebar">
+        <label for="planDate">计划日期</label>
+        <select id="planDate" aria-label="选择盘前计划日期"></select>
+        <button type="button" id="planToday">回到今天</button>
+      </div>
+      <div class="plan-meta" id="planMeta">今天可编辑，历史计划只读。</div>
+      <textarea id="planNote" placeholder="记录明天的情绪判断、重点板块、候选个股、买卖条件和风险预案。内容按日期自动保存在本机。"></textarea>
       <div class="plan-note-bar">
-        <button type="button" class="primary" id="planNoteSave">保存便签</button>
-        <button type="button" id="planNoteClear">清空便签</button>
+        <button type="button" class="primary" id="planNoteSave">保存今天的计划</button>
+        <button type="button" id="planNoteClear">清空今天的计划</button>
         <span class="k" id="planNoteStatus"></span>
       </div>
+      <div class="plan-history-note">切换上方日期可查看过去的盘前计划；历史日期不会被修改。</div>
     </div>
   </div>
 </div>
@@ -7612,12 +7617,14 @@ $("#dlgFav").addEventListener("click", () => {
   try { renderWatch(); } catch (e) { /* 忽略 */ }
 });
 
-/* ---------- 盘前计划悬浮窗与便签 ---------- */
-const PLAN_NOTE_KEY = "dailyPlanNoteV1";
+/* ---------- 盘前计划：按日期保存，可回看历史 ---------- */
+const PLAN_NOTES_KEY = "premarketPlansV2";
+const LEGACY_PLAN_NOTE_KEY = "dailyPlanNoteV1";
 const PLAN_FAB_POS_KEY = "planFabPosV1";
 let _planNoteTimer = null;
 let _planDrag = null;
 let _suppressPlanClick = false;
+let _planCurrentDate = "";
 
 function planFabClamp(left, top) {
   const fab = $("#planFab");
@@ -7686,60 +7693,131 @@ window.addEventListener("resize", () => {
   planFabSetPosition(r.left, r.top, false);
 });
 
-function renderPlanCache() {
-  const meta = $("#planMeta"), text = $("#planText"), source = $("#planSource");
-  const data = window.__TGB_PLAN__;
-  const selected = data && data.selected;
-  if (!selected) {
-    meta.textContent = "公开区暂未提取到最新计划";
-    text.textContent = "可能尚未更新、仅以图片发布，或位于需要登录/解锁的内容中。你仍可以在下方记录自己的计划。";
-    source.hidden = true;
-    return;
-  }
-  meta.textContent = "发布时间：" + (selected.published || "-") +
-    " · 来源：" + (selected.type || "公开主帖") +
-    (selected.score ? " · 计划匹配度 " + selected.score : "");
-  text.textContent = selected.body || "（计划正文为空）";
-  if (selected.url) {
-    source.href = selected.url;
-    source.hidden = false;
-  } else {
-    source.hidden = true;
-  }
-}
-function planNoteLoad() {
-  const box = $("#planNote");
-  try { box.value = localStorage.getItem(PLAN_NOTE_KEY) || ""; } catch (e) { box.value = ""; }
-}
-function planNoteSave(show) {
-  const box = $("#planNote"), status = $("#planNoteStatus");
+function planStoreLoad() {
+  let all = {};
   try {
-    localStorage.setItem(PLAN_NOTE_KEY, box.value);
-    if (status) status.textContent = "已保存到本机 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    const obj = JSON.parse(localStorage.getItem(PLAN_NOTES_KEY) || "{}");
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) all = obj;
+  } catch (e) { all = {}; }
+  if (!Object.keys(all).length) {
+    try {
+      const old = localStorage.getItem(LEGACY_PLAN_NOTE_KEY) || "";
+      if (old.trim()) {
+        const date = snapToday(), now = Date.now();
+        all[date] = { date: date, body: old, createdAt: now, updatedAt: now, migrated: true };
+        localStorage.setItem(PLAN_NOTES_KEY, JSON.stringify(all));
+      }
+    } catch (e) { }
+  }
+  return all;
+}
+function planStoreSave(all) {
+  localStorage.setItem(PLAN_NOTES_KEY, JSON.stringify(all || {}));
+}
+function planRefreshDates(selected) {
+  const sel = $("#planDate");
+  const today = snapToday();
+  const all = planStoreLoad();
+  const dates = Object.keys(all).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().reverse();
+  if (dates.indexOf(today) < 0) dates.unshift(today);
+  sel.innerHTML = dates.map(d => {
+    const rec = all[d] || {};
+    const mark = d === today ? "今天" : (rec.body ? "已保存" : "空白");
+    return '<option value="' + esc(d) + '">' + esc(d + " · " + mark) + "</option>";
+  }).join("");
+  sel.value = dates.indexOf(selected) >= 0 ? selected : today;
+  return sel.value;
+}
+function planRender(date) {
+  _planCurrentDate = date || snapToday();
+  const today = snapToday();
+  const all = planStoreLoad();
+  const rec = all[_planCurrentDate] || null;
+  const box = $("#planNote"), meta = $("#planMeta"), status = $("#planNoteStatus");
+  const readonly = _planCurrentDate !== today;
+  box.value = rec && rec.body || "";
+  box.readOnly = readonly;
+  $("#planNoteSave").disabled = readonly;
+  $("#planNoteClear").disabled = readonly || !rec;
+  $("#planNoteSave").textContent = readonly ? "历史计划只读" : "保存今天的计划";
+  $("#planNoteClear").textContent = readonly ? "历史计划不可清空" : "清空今天的计划";
+  if (readonly) {
+    meta.textContent = "历史计划 · " + _planCurrentDate +
+      (rec && rec.updatedAt ? " · 最后保存 " + new Date(rec.updatedAt).toLocaleTimeString("zh-CN", { hour12: false }) : " · 无内容") +
+      " · 只读";
+  } else {
+    meta.textContent = "今天 · " + _planCurrentDate +
+      (rec && rec.updatedAt ? " · 最后保存 " + new Date(rec.updatedAt).toLocaleTimeString("zh-CN", { hour12: false }) : " · 尚未保存") +
+      " · 输入后自动保存";
+  }
+  if (status) status.textContent = "";
+}
+function planSave(showStatus) {
+  const date = _planCurrentDate || snapToday();
+  if (date !== snapToday()) return false;
+  const body = $("#planNote").value;
+  const status = $("#planNoteStatus");
+  if (!body.trim()) {
+    if (showStatus && status) status.textContent = "内容为空，未保存";
+    return false;
+  }
+  const all = planStoreLoad();
+  const old = all[date] || {};
+  const now = Date.now();
+  all[date] = {
+    date: date, body: body, createdAt: old.createdAt || now, updatedAt: now
+  };
+  try {
+    planStoreSave(all);
+    planRefreshDates(date);
+    if (status) status.textContent = "已保存到本机 " +
+      new Date(now).toLocaleTimeString("zh-CN", { hour12: false });
+    return true;
   } catch (e) {
     if (status) status.textContent = "保存失败";
+    return false;
   }
-  if (show) clearTimeout(_planNoteTimer);
 }
 $("#planFab").addEventListener("click", () => {
   if (_suppressPlanClick) return;
-  renderPlanCache();
-  planNoteLoad();
+  const today = snapToday();
+  planRefreshDates(today);
+  planRender(today);
   $("#planModal").hidden = false;
 });
 $("#planClose").addEventListener("click", () => { $("#planModal").hidden = true; });
 $("#planModal").addEventListener("click", e => {
   if (e.target === $("#planModal")) $("#planModal").hidden = true;
 });
-$("#planNoteSave").addEventListener("click", () => planNoteSave(true));
+$("#planDate").addEventListener("change", () => {
+  clearTimeout(_planNoteTimer);
+  planRender($("#planDate").value || snapToday());
+});
+$("#planToday").addEventListener("click", () => {
+  const today = planRefreshDates(snapToday());
+  planRender(today);
+});
+$("#planNoteSave").addEventListener("click", () => planSave(true));
 $("#planNoteClear").addEventListener("click", () => {
-  if (!confirm("清空本机便签？")) return;
-  $("#planNote").value = "";
-  planNoteSave(true);
+  const date = _planCurrentDate || snapToday();
+  if (date !== snapToday()) return;
+  if (!confirm("清空今天保存的盘前计划？")) return;
+  const all = planStoreLoad();
+  delete all[date];
+  try {
+    planStoreSave(all);
+    $("#planNote").value = "";
+    planRefreshDates(date);
+    planRender(date);
+    $("#planNoteStatus").textContent = "今天的计划已清空";
+  } catch (e) {
+    $("#planNoteStatus").textContent = "清空失败";
+  }
 });
 $("#planNote").addEventListener("input", () => {
+  if (_planCurrentDate !== snapToday()) return;
   clearTimeout(_planNoteTimer);
-  _planNoteTimer = setTimeout(() => planNoteSave(false), 400);
+  _planNoteTimer = setTimeout(() => planSave(false), 500);
 });
 
 $("#aucRefresh").addEventListener("click", loadAuction);
