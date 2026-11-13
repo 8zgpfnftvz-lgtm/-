@@ -84,12 +84,13 @@ button:disabled{opacity:.55;cursor:default}
 .tabs button.on{background:linear-gradient(135deg,var(--accent),#3d7cff);color:#fff;
   box-shadow:0 6px 16px rgba(36,107,253,.22)}
 section[hidden],div[hidden]{display:none}
-.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
-.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;
-  box-shadow:0 7px 20px rgba(31,45,70,.045)}
+.grid{display:grid;gap:9px;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));align-items:stretch}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;
+  height:92px;overflow:auto;box-shadow:0 7px 20px rgba(31,45,70,.045)}
+.card>.k:last-child{font-size:10.5px;line-height:1.35}
 .k{color:var(--muted);font-size:12.5px}
-.v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
-.v.s{font-size:16px}
+.v{font-size:19px;font-weight:650;font-variant-numeric:tabular-nums;margin-top:1px;line-height:1.3}
+.v.s{font-size:14px}
 .up{color:var(--up)} .down{color:var(--down)}
 h2{font-size:15px;margin:22px 0 10px;font-weight:600}
 h3{font-size:14px;margin:18px 0 8px;font-weight:600;color:var(--muted);cursor:pointer;user-select:none}
@@ -110,7 +111,7 @@ h3.folded{color:var(--accent)}
 .navArrow:disabled{opacity:.12;cursor:default}
 .navArrow.left{left:4px}
 .navArrow.right{right:4px}
-.panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;
+.panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px;
   overflow-x:auto;box-shadow:0 7px 20px rgba(31,45,70,.045)}
 .overview-module{margin-top:18px;padding:16px;background:var(--card);border:1px solid var(--border);
   border-radius:16px;box-shadow:var(--shadow)}
@@ -125,8 +126,9 @@ th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
 th.sortable:hover{color:var(--accent)}
 th.sortable.on{color:var(--accent)}
 .bar button.on{background:var(--accent);border-color:var(--accent);color:#fff}
-table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
-th,td{padding:6px 10px;text-align:right;border-bottom:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap}
+th,td{padding:4px 8px;line-height:1.35;text-align:right;border-bottom:1px solid var(--border)}
+tbody tr{height:27px}
 th{color:var(--muted);font-weight:500;position:sticky;top:0;background:var(--card)}
 th:first-child,td:first-child,th.l,td.l{text-align:left}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
@@ -138,6 +140,11 @@ tbody tr:hover{background:var(--soft)}
 #auc_anchor .tag{font-size:10px;line-height:17px;padding:1px 6px}
 #auc_anchor .ancDel{height:22px;min-width:34px;padding:1px 7px;border-radius:6px;
   font-size:10.5px;line-height:18px;vertical-align:middle}
+#aucCards{grid-template-columns:repeat(auto-fit,minmax(138px,1fr));gap:7px}
+#aucCards .card{height:84px;padding:8px 10px;border-radius:11px}
+#aucCards .v{font-size:17px}
+#aucCards .v.s{font-size:13.5px}
+#aucCards .k{font-size:10.5px;line-height:1.3}
 .tag{display:inline-block;padding:1px 7px;border-radius:999px;background:var(--soft);
   color:var(--muted);font-size:12px;margin-right:4px}
 .tag.ok{background:var(--accent);color:#fff}
@@ -1630,6 +1637,13 @@ tbody tr:hover td .lnk{text-decoration:underline}
     var nodeAction = '不套用首阴节点买点，只保留原打板评分观察。';
     var nodeLayer = 0;
     var nodePreferred = null;
+    var cycleOwner = anchor ? ('仍处 ' + anchor.name + ' 周期' +
+      (breakAge ? '（旧龙头退潮第' + breakAge + '天）' : '（龙头延续中）')) : '无明确周期归属';
+    var currentMaxBoard = zt.reduce(function (m, p) { return Math.max(m, Number(p.lbc || 1)); }, 0);
+    var newCycleState = cyc.dragon_active ? '原龙头仍在延续，周期尚未切换'
+      : (!midCleared ? '旧周期中位未出清，不能切换新周期'
+        : (currentMaxBoard > anchorLb ? '已有股票超过原龙头高度，需要确认换龙承接'
+          : '旧周期中位已出清；新周期尚未通过高度突破确认'));
     if (anchorLb < 5) {
       nodeTitle = '没有5板以上市场级锚定龙头';
       nodeAction = '普通连板断板不自动产生节点，次日不按本模式开新仓。';
@@ -1669,6 +1683,8 @@ tbody tr:hover td .lnk{text-decoration:underline}
     L.push('**节点位置：' + nodeStage + '**');
     L.push('');
     L.push('- 锚定龙头：' + (anchor ? anchor.name + '（' + anchor.lb + '板）' : '无'));
+    L.push('- 当前周期归属：**' + cycleOwner + '**');
+    L.push('- 新周期状态：' + newCycleState);
     L.push('- 中位状态：' + (cyc.mid_text || (midCleared ? '已出清' : '未出清')));
     L.push('- 执行结论：**' + nodeTitle + '**。' + nodeAction);
     L.push('');
@@ -5534,11 +5550,20 @@ function leaderRelayView() {
   const hist = DATA && DATA.limit_history;
   const today = DATA && DATA.meta && DATA.meta.date;
   if (!hist || !Array.isArray(hist.dates) || !Array.isArray(hist.runs) || !today) return null;
-  const di = hist.dates.indexOf(today);
-  if (di < 1) return null;
-  const prev = hist.dates[di - 1];
+  let dates = hist.dates.slice();
+  let di = dates.indexOf(today);
+  let source = "当日连板历史";
+  if (di < 1) {
+    const emo = (DATA.emotion || []).map(x => x && x.date).filter(Boolean);
+    const prevTrade = emo.length >= 2 ? emo[emo.length - 2] : "";
+    if (!prevTrade || dates[dates.length - 1] !== prevTrade) return null;
+    dates.push(today);
+    di = dates.length - 1;
+    source = "最近连板历史 + 今日股票池";
+  }
+  const prev = dates[di - 1];
   const pos = {};
-  hist.dates.forEach((d, i) => { pos[d] = i; });
+  dates.forEach((d, i) => { pos[d] = i; });
 
   function dayRows(day) {
     const p = pos[day];
@@ -5648,6 +5673,7 @@ function leaderRelayView() {
   return {
     today, prev, prevMax, currentMax, oldBroken, oldFeedback,
     marketNode, prevMidRows, midAlive, midCleared,
+    source,
     iceThreeCount: zt.filter(x => Number(x.lbc || 1) === 3).length,
     candidates, diffusion, node
   };
@@ -5843,6 +5869,17 @@ function nodeExecutionView() {
       : (anchorNow && Number(anchorNow.today_pct) >= 0)
         ? "断板后收红，有修复但尚未反包"
         : "断板后未反包，等待中位出清";
+  const currentMaxBoard = zt.reduce((m, p) => Math.max(m, Number(p.lbc || 1)), 0);
+  const cycleOwner = anchor
+    ? ("仍处 " + anchor.name + " 周期" +
+      (breakAge ? "（旧龙头退潮第" + breakAge + "天）" : "（龙头延续中）"))
+    : "无明确周期归属";
+  const newCycleState = cyc.dragon_active
+    ? "原龙头仍在延续，周期尚未切换"
+    : (!midCleared ? "旧周期中位未出清，不能切换新周期"
+      : (currentMaxBoard > Number(anchor && anchor.lb || 0)
+        ? "已有股票超过原龙头高度，需要确认换龙承接"
+        : "旧周期中位已出清；新周期尚未通过高度突破确认"));
   const cohortText = breakAge === null ? "节点位置未知"
     : breakAge <= 1 ? "断板当天2板"
     : breakAge === 2 ? "断板次日2板"
@@ -5913,6 +5950,7 @@ function nodeExecutionView() {
   return {
     tone, title, action, anchor, breakAge, phase, midCleared, midText, layer: nodeLayer,
     anchorTheme, cohortText, breakPath,
+    cycleOwner, newCycleState, currentMaxBoard,
     preferred: candidateRows.length ? candidateRows[0] : null,
     candidates: candidateRows
   };
@@ -6030,7 +6068,8 @@ function renderLeaderRelay() {
     const names = view.candidates.slice(0, 4);
     hint.innerHTML =
       '<div class="relay-auction-card"><div class="relay-auction-head"><b>龙头接力 · ' +
-      esc(view.node.title) + '</b><span>基于 ' + esc(view.today) + ' 收盘</span></div>' +
+      esc(view.node.title) + '</b><span>' + esc(view.source || "当日连板历史") +
+      ' · ' + esc(view.today) + '</span></div>' +
       '<div class="relay-auction-names">' +
       (names.length
         ? names.map(x => '<span class="tag ' + (x.priority >= 3 ? "rec" : "ok") + '">' +
@@ -6663,6 +6702,8 @@ const VRCOLS = [
   { key: "name", label: "名称", left: true },
   { key: "close", label: "现价", num: true, sortable: true, render: r => num(r.close) },
   { key: "pct", label: "今日涨跌", num: true, sortable: true, cls: r => cls(r.pct), render: r => pct(r.pct, 2) },
+  { key: "ma_trend", label: "均线", left: true, render: r => monitorMaCell(r) },
+  { key: "after_pct", label: "信号后", num: true, sortable: true, cls: r => cls(r.after_pct), render: r => monitorAfterCell(r) },
   { key: "days", label: "连续阳线", num: true, sortable: true, render: r => r.days + " 日" },
   { key: "start_date", label: "起始日", left: true },
   { key: "total_chg", label: "累计涨幅", num: true, sortable: true, cls: r => cls(r.total_chg), render: r => pct(r.total_chg, 2) },
@@ -6670,6 +6711,79 @@ const VRCOLS = [
   { key: "low_step", label: "底部抬高", num: true, sortable: true, cls: () => "up", render: r => pct(r.low_step, 2) },
   { key: "bk", label: "板块 / 题材", left: true, render: sectorCell },
 ];
+
+const MONITOR_TREND_KEY = "monitorTrendV1";
+let _MONITOR_TREND_BUSY = false;
+const _MONITOR_TREND_CACHE = (() => {
+  try {
+    const o = JSON.parse(localStorage.getItem(MONITOR_TREND_KEY) || "{}");
+    return o && typeof o === "object" ? o : {};
+  } catch (e) { return {}; }
+})();
+
+function monitorTrendKey(row) {
+  return (DATA && DATA.meta && DATA.meta.date ? DATA.meta.date : "") + "|" + row.symbol;
+}
+function monitorMaCell(r) {
+  if (!r.ma_trend) return '<span class="k">读取中…</span>';
+  const cls = r.ma_trend === "多头" ? "ok" : (r.ma_trend === "空头" ? "bad" : "");
+  return '<span class="tag ' + cls + '">' + esc(r.ma_trend) + "</span>" +
+    '<span class="k"> ' + num(r.ma5) + "/" + num(r.ma10) + "/" + num(r.ma20) + "</span>";
+}
+function monitorAfterCell(r) {
+  if (r.after_pct === null || r.after_pct === undefined || isNaN(r.after_pct))
+    return '<span class="k">-</span>';
+  const v = Number(r.after_pct);
+  return '<span class="' + cls(v) + '">' + (v > 0.2 ? "走强 " : v < -0.2 ? "走弱 " : "持平 ") + pct(v, 2) + "</span>";
+}
+function applyMonitorTrendCache(rows) {
+  (rows || []).forEach(r => {
+    const hit = _MONITOR_TREND_CACHE[monitorTrendKey(r)];
+    if (hit) Object.assign(r, hit);
+  });
+}
+function monitorMaOf(closes, n) {
+  if (closes.length < n) return null;
+  let s = 0;
+  for (let i = closes.length - n; i < closes.length; i++) s += closes[i];
+  return s / n;
+}
+async function enrichMonitorTrend() {
+  if (_MONITOR_TREND_BUSY || !DATA || !window.__PHONE_ENGINE__) return;
+  const rows = (DATA.vol_rise || []).concat(DATA.lower_shadow || []);
+  const pending = rows.filter(r => !r.ma_trend).slice(0, 80);
+  if (!pending.length) return;
+  _MONITOR_TREND_BUSY = true;
+  try {
+    const syms = Array.from(new Set(pending.map(r => r.symbol)));
+    await window.__PHONE_ENGINE__.poolMap(syms, async sym => {
+      let bars = null;
+      try { bars = await window.__PHONE_ENGINE__.kline(sym, 80); } catch (e) { return null; }
+      if (!bars || bars.length < 20) return null;
+      const closes = bars.map(b => b.c);
+      const ma5 = monitorMaOf(closes, 5), ma10 = monitorMaOf(closes, 10), ma20 = monitorMaOf(closes, 20);
+      const last = bars[bars.length - 1];
+      const trend = (ma5 && ma10 && ma20 && last.c >= ma5 && ma5 >= ma10 && ma10 >= ma20)
+        ? "多头" : ((ma5 && ma10 && ma20 && last.c < ma5 && ma5 < ma10 && ma10 < ma20) ? "空头" : "纠缠");
+      rows.filter(r => r.symbol === sym).forEach(r => {
+        const refDate = r.start_date || r.date;
+        const ref = bars.find(b => b.date === refDate) || bars[0];
+        const after = ref && ref.c ? +((last.c / ref.c - 1) * 100).toFixed(2) : null;
+        const payload = { ma5: +ma5.toFixed(2), ma10: +ma10.toFixed(2), ma20: +ma20.toFixed(2),
+          ma_trend: trend, after_pct: after };
+        Object.assign(r, payload);
+        _MONITOR_TREND_CACHE[monitorTrendKey(r)] = payload;
+      });
+      return true;
+    }, 6);
+    const keys = Object.keys(_MONITOR_TREND_CACHE);
+    if (keys.length > 800) keys.slice(0, keys.length - 800).forEach(k => delete _MONITOR_TREND_CACHE[k]);
+    try { localStorage.setItem(MONITOR_TREND_KEY, JSON.stringify(_MONITOR_TREND_CACHE)); } catch (e) { }
+  } finally {
+    _MONITOR_TREND_BUSY = false;
+    renderMonitor();
+  }
+}
 
 function renderMonitor() {
   if (!DATA) return;
@@ -6709,6 +6823,7 @@ function renderMonitor() {
 
   // 连续 2~3 日阳线、量价齐升、底部抬高，今日未涨停
   const vrs = DATA.vol_rise || [];
+  applyMonitorTrendCache(vrs);
   let vrows = vrs;
   if (VR_FILTER === "d2") vrows = vrs.filter(r => r.days === 2);
   else if (VR_FILTER === "d3") vrows = vrs.filter(r => r.days === 3);
@@ -6716,11 +6831,14 @@ function renderMonitor() {
   $("#vrInfo").textContent = "当前显示 " + vrows.length + " 只（共 " + vrs.length + " 只）";
 
   const shadows = DATA.lower_shadow || [];
+  applyMonitorTrendCache(shadows);
   table("t_lshadow", shadows, [
     { key: "name", label: "名称", left: true },
     { key: "days_ago", label: "距今天", num: true, sortable: true, render: r => r.days_ago === null ? "-" : r.days_ago + "日" },
     { key: "close", label: "现价", num: true, sortable: true, render: r => num(r.close) },
     { key: "pct", label: "今日涨跌", num: true, sortable: true, cls: r => cls(r.pct), render: r => pct(r.pct, 2) },
+    { key: "ma_trend", label: "均线", left: true, render: r => monitorMaCell(r) },
+    { key: "after_pct", label: "信号后", num: true, sortable: true, cls: r => cls(r.after_pct), render: r => monitorAfterCell(r) },
     { key: "bk", label: "板块 / 题材", left: true, render: sectorCell },
     { key: "shadow", label: "下影线%", num: true, sortable: true, render: r => num(r.shadow, 2) + "%" },
     { key: "dip", label: "最低点跌幅%", num: true, sortable: true, cls: () => "down", render: r => num(r.dip, 2) + "%" },
@@ -6730,6 +6848,7 @@ function renderMonitor() {
     { key: "date", label: "发生日", left: true, sortable: true },
   ], { sort: (a, b) => String(b.date).localeCompare(String(a.date)) || b.shadow - a.shadow });
   $("#lshadowInfo").textContent = "当前显示 " + shadows.length + " 只";
+  setTimeout(enrichMonitorTrend, 0);
 }
 
 /* ---------- Markdown ---------- */
