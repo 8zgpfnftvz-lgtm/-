@@ -8,9 +8,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="天天板">
 <meta name="theme-color" content="#0f1b2d">
-<link rel="apple-touch-icon" href="icon-180.png">
-<link rel="icon" href="icon-180.png">
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180-v2.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32-v2.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192-v2.png">
+<link rel="manifest" href="manifest.webmanifest?v=20261113">
 
 <meta name="format-detection" content="telephone=no">
 <title>天天板</title>
@@ -1332,7 +1333,8 @@ tbody tr:hover td .lnk{text-decoration:underline}
   }
 
   /* ---------------------------------------------------------------- 存储 */
-  var DB_NAME = 'qianlu', STORE = 'snapshots', KLINE_STORE = 'klines', DB_VERSION = 2;
+  var DB_NAME = 'qianlu', STORE = 'snapshots', KLINE_STORE = 'klines',
+      CACHE_STORE = 'cache', DB_VERSION = 3;
   function db() {
     return new Promise(function (resolve, reject) {
       if (!window.indexedDB) { reject(new Error('no idb')); return; }
@@ -1341,6 +1343,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
         var d = req.result;
         if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: 'date' });
         if (!d.objectStoreNames.contains(KLINE_STORE)) d.createObjectStore(KLINE_STORE, { keyPath: 'symbol' });
+        if (!d.objectStoreNames.contains(CACHE_STORE)) d.createObjectStore(CACHE_STORE, { keyPath: 'key' });
       };
       req.onsuccess = function () { resolve(req.result); };
       req.onerror = function () { reject(req.error); };
@@ -1388,6 +1391,28 @@ tbody tr:hover td .lnk{text-decoration:underline}
       });
     }).catch(function () { return false; });
   }
+  function cachePutMany(items) {
+    if (!items || !items.length) return Promise.resolve(false);
+    return db().then(function (d) {
+      return new Promise(function (res, rej) {
+        var tx = d.transaction(CACHE_STORE, 'readwrite');
+        var store = tx.objectStore(CACHE_STORE);
+        items.forEach(function (rec) { store.put(rec); });
+        tx.oncomplete = function () { d.close(); res(true); };
+        tx.onerror = function () { d.close(); rej(tx.error); };
+      });
+    }).catch(function () { return false; });
+  }
+  function cacheGet(key) {
+    return db().then(function (d) {
+      return new Promise(function (res, rej) {
+        var tx = d.transaction(CACHE_STORE, 'readonly');
+        var rq = tx.objectStore(CACHE_STORE).get(key);
+        rq.onsuccess = function () { var v = rq.result || null; d.close(); res(v); };
+        rq.onerror = function () { d.close(); rej(rq.error); };
+      });
+    }).catch(function () { return null; });
+  }
 
   window.__PHONE_ENGINE__ = {
     jsonp: jsonp,
@@ -1409,6 +1434,8 @@ tbody tr:hover td .lnk{text-decoration:underline}
     dbPut: dbPut,
     klineAll: klineAll,
     klinePutMany: klinePutMany,
+    cacheGet: cacheGet,
+    cachePutMany: cachePutMany,
     POOL_DAYS: POOL_DAYS
   };
 })();
@@ -1867,9 +1894,17 @@ tbody tr:hover td .lnk{text-decoration:underline}
       ['zt', 'zb', 'dt'].forEach(function (k) { jobs.push({ d: d, k: k }); });
     });
     return E.poolMap(jobs, function (j) {
-      return E.jsonpRetry(E.poolUrl(j.k, j.d.replace(/-/g, ''))).then(function (res) {
-        var pool = (res && res.data && res.data.pool) || [];
-        return pool.filter(function (x) { return !/^(4|8|9)/.test(String(x.c)); });
+      var cacheKey = 'auction-pool:' + j.d + ':' + j.k;
+      return E.cacheGet(cacheKey).then(function (hit) {
+        if (hit && Array.isArray(hit.value)) return hit.value;
+        return E.jsonpRetry(E.poolUrl(j.k, j.d.replace(/-/g, ''))).then(function (res) {
+          var pool = (res && res.data && res.data.pool) || [];
+          var clean = pool.filter(function (x) { return !/^(4|8|9)/.test(String(x.c)); });
+          if (j.k !== 'zt' || clean.length) {
+            E.cachePutMany([{ key: cacheKey, value: clean, t: Date.now() }]).catch(function () {});
+          }
+          return clean;
+        });
       });
     }, 6, function (done, total) {
       progress(cb, '① 拉涨停/炸板/跌停池 ' + done + '/' + total, done / total * 0.35);
@@ -7041,10 +7076,10 @@ function applyData(payload) {
   DATA = payload;
   const m = DATA.meta;
   // 存一份到本机，断网时也能打开看上次的数据
+  const cacheRecord = { key: "lastData", t: Date.now(), d: payload };
+  try { window.__PHONE_ENGINE__.cachePutMany([cacheRecord]).catch(() => {}); } catch (e) { }
   try {
-    localStorage.setItem("lastData", JSON.stringify({
-      t: Date.now(), d: payload
-    }));
+    localStorage.setItem("lastData", JSON.stringify(cacheRecord));
   } catch (e) { /* 数据太大或本地存储不可用时忽略 */ }
   $("#meta").innerHTML = "基准日 <b>" + esc(m.date) + "</b> · 情绪阶段 <b>" + esc(m.phase) +
     "</b> · " + m.kline + " 只个股 · " + m.days + " 个交易日数据 · 生成于 " + esc(m.generated);
@@ -7112,40 +7147,71 @@ function markStatic() {
 async function load() {
   if (INLINE) { applyData(window.__DATA__); markStatic(); return; }
   if (PHONE) {
-    const cached = readCache();
+    const cached = await readCache();
     if (cached) {
       applyData(cached.d);
       markPhone();
-    }
-    showProg("准备中…");
-    try {
-      DATA = await window.__PHONE_BUILD__.run(setProg);
-      applyData(DATA);
-      markPhone();
+      if (!shouldAutoRefresh(cached)) return;
+      setTimeout(() => { refreshPhoneData(cached).catch(() => {}); }, 650);
       return;
-    } catch (e) {
-      // 抓数失败（断网/接口异常）→ 用上次缓存的数据，至少能看
-      if (cached) {
-        applyData(cached.d);
-        markPhone();
-        markOffline(cached.t, e.message);
-        return;
-      }
-      throw e;
     }
+    return refreshPhoneData(null);
   }
   const res = await fetch("api/data");
   if (!res.ok) throw new Error("HTTP " + res.status);
   applyData(await res.json());
 }
 
-function readCache() {
+async function readCache() {
+  try {
+    const rec = await window.__PHONE_ENGINE__.cacheGet("lastData");
+    if (rec && rec.d && rec.d.meta) return { t: rec.t || 0, d: rec.d };
+  } catch (e) { }
   try {
     const raw = localStorage.getItem("lastData");
     if (!raw) return null;
     const o = JSON.parse(raw);
     return (o && o.d && o.d.meta) ? o : null;
   } catch (e) { return null; }
+}
+
+function shouldAutoRefresh(cached) {
+  if (!cached || !cached.t) return true;
+  const now = new Date();
+  const age = Date.now() - Number(cached.t);
+  const day = now.getDay();
+  const hhmm = now.getHours() * 100 + now.getMinutes();
+  if (!Number.isFinite(age) || age < 5 * 60 * 1000) return false;
+  if (day === 0 || day === 6) return age >= 12 * 60 * 60 * 1000;
+  if (hhmm < 915) return false;
+  const cachedDate = cached.d && cached.d.meta && cached.d.meta.date;
+  if (cachedDate === snapToday()) {
+    const closeStamp = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 15, 5).getTime();
+    if (hhmm >= 1505 && Number(cached.t) >= closeStamp) return false;
+  }
+  if (hhmm >= 1505) return true;
+  return age >= 5 * 60 * 1000;
+}
+
+async function refreshPhoneData(cached) {
+  try {
+    $("#refresh").disabled = true;
+    showProg(cached ? "后台更新行情…" : "首次准备数据…");
+    DATA = await window.__PHONE_BUILD__.run(setProg);
+    applyData(DATA);
+    markPhone();
+    return DATA;
+  } catch (e) {
+    if (cached) {
+      DATA = cached.d;
+      markOffline(cached.t, e.message);
+      showWarn("后台更新失败，继续显示上次完整复盘");
+      return DATA;
+    }
+    throw e;
+  } finally {
+    $("#refresh").disabled = false;
+  }
 }
 
 function markOffline(ts, msg) {
@@ -7180,15 +7246,9 @@ async function poll() {
 $("#refresh").addEventListener("click", async () => {
   if (PHONE) {
     try {
-      $("#refresh").disabled = true;
-      showProg("开始更新…");
-      DATA = await window.__PHONE_BUILD__.run(setProg);
-      applyData(DATA);
-      markPhone();
+      await refreshPhoneData(null);
     } catch (e) {
       showProg("更新失败：" + e.message);
-    } finally {
-      $("#refresh").disabled = false;
     }
     return;
   }
