@@ -408,6 +408,22 @@ tbody tr:hover td .lnk{text-decoration:underline}
 .relay-auction-head span{font-size:10px;color:var(--muted)}
 .relay-auction-names{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
 .relay-auction-note{font-size:9.5px;color:var(--muted);margin-top:5px}
+.node-exec-card{margin-top:8px;border:1px solid var(--border);border-left:4px solid var(--accent);
+  border-radius:12px;padding:10px 12px;background:linear-gradient(145deg,var(--card),var(--soft));box-shadow:var(--shadow)}
+.node-exec-card.done{border-left-color:var(--up)}
+.node-exec-card.wait{border-left-color:#d69218}
+.node-exec-card.bad{border-left-color:var(--down)}
+.node-exec-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.node-exec-head b{font-size:13px;line-height:1.4}
+.node-exec-head span{font-size:9.5px;color:var(--muted);white-space:nowrap}
+.node-exec-action{font-size:12.5px;font-weight:650;margin-top:6px;line-height:1.5}
+.node-exec-meta{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5}
+.node-exec-names{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.node-history{margin-top:7px;border-top:1px dashed var(--border);padding-top:6px}
+.node-history summary{cursor:pointer;color:var(--muted);font-size:10px}
+.node-history-row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;
+  font-size:9.5px;color:var(--muted);border-bottom:1px dotted var(--border)}
+.node-history-row b{color:var(--fg);font-weight:600}
 .plan-fab{position:fixed;right:16px;bottom:92px;z-index:80;width:54px;height:54px;
   border-radius:15px;padding:0;display:grid;place-items:center;cursor:grab;
   touch-action:none;user-select:none;-webkit-user-select:none;
@@ -1024,7 +1040,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
         <li><b>模式二</b>：3板+ 回调的票，横幅直接告诉你今天该不该做、有几只符合高胜率条件</li>
         <li><b>监控</b>：① 前期启动首板后箱体横盘、今天新首板；② 近 4 日冲高回落；③ 连续量价齐升</li>
         <li><b>竞价</b>：第二天 9:15–9:25 打开，自动判断锚定池超预期/不及预期，给开仓结论</li>
-        <li><b>当日复盘</b>：一句话结论 + 次日验证点，可导出成 Markdown</li>
+        <li><b>当日复盘</b>：一句话结论 + 次日盘前计划，可导出成 Markdown</li>
       </ol>
       <h3>数据从哪来</h3>
       <p>全部来自公开行情接口，由你的浏览器<b>直接抓取并当场计算</b>：腾讯的全市场报价和个股日K、东方财富的涨停/炸板/跌停池、新浪的行业分类。<b>不需要服务器，不需要安装任何东西。</b></p>
@@ -1652,6 +1668,115 @@ tbody tr:hover td .lnk{text-decoration:underline}
       L.push('- 当日没有涨停数据。');
     }
     L.push('');
+
+    /* 三、次日盘前计划：按龙头首阴节点体系重排，旧的第3/4/5/7节不再输出。 */
+    var cyc = c.cycle || {};
+    var anchor = cyc.dragon || null;
+    var anchorLb = anchor ? Number(anchor.lb || 0) : 0;
+    var breakAge = cyc.break_age === null || cyc.break_age === undefined
+      ? null : Number(cyc.break_age);
+    var mid3Total = Number(cyc.mid3_total || 0);
+    var mid4Total = Number(cyc.mid4_total || 0);
+    var midCleared = (mid3Total + mid4Total > 0) &&
+      Number(cyc.mid3_left || 0) === 0 && Number(cyc.mid4_left || 0) === 0;
+    var node2 = zt.filter(function (p) { return Number(p.lbc || 1) === 2 && !p.yizi; })
+      .sort(function (a, b) { return (a.fbt || 999999) - (b.fbt || 999999); });
+    var node3 = zt.filter(function (p) { return Number(p.lbc || 1) === 3 && !p.yizi; })
+      .sort(function (a, b) { return (a.fbt || 999999) - (b.fbt || 999999); });
+    var nodeStage = breakAge === null ? '节点位置未知'
+      : breakAge <= 1 ? '龙头断板当天'
+      : breakAge === 2 ? '断板次日'
+      : breakAge === 3 ? '断板第3日'
+      : '断板第4日及以后的新周期窗口';
+    var nodeTitle = '无有效首阴节点';
+    var nodeAction = '不套用首阴节点买点，只保留原打板评分观察。';
+    var nodeLayer = 0;
+    var nodePreferred = null;
+    if (anchorLb < 5) {
+      nodeTitle = '没有5板以上市场级锚定龙头';
+      nodeAction = '普通连板断板不自动产生节点，次日不按本模式开新仓。';
+    } else if (cyc.dragon_active) {
+      nodeTitle = '龙头仍在延续，首阴节点未触发';
+      nodeAction = '不做首阴节点票，按原模式观察龙头和主线核心。';
+    } else if (breakAge === 1) {
+      nodeTitle = '龙头断板第1天，节点刚形成';
+      nodeAction = '断板当天不做2进3，不接同属性补涨；先等中位出清和次日反馈。';
+    } else if (!midCleared) {
+      nodeTitle = '中位尚未完全出清';
+      nodeAction = '只跟踪各分支身位2板，不把2进3当确定性买点；等中位出清或龙头超预期反包。';
+    } else if (breakAge >= 4 && !node3.length) {
+      nodeTitle = '中位已出清，进入新周期节点窗口';
+      nodeAction = '只跟踪断板第4日及以后出现的新2板，次日执行2进3。';
+      nodeLayer = 3;
+      nodePreferred = node2[0] || null;
+    } else if (node3.length === 1) {
+      nodeTitle = '中位出清，同梯队三板唯一';
+      nodeAction = '次日执行3进4确认；必须看竞价、承接和弱转强，不能只凭唯一性无条件买。';
+      nodeLayer = 4;
+      nodePreferred = node3[0];
+    } else if (node3.length > 1) {
+      nodeTitle = '中位出清，但三板仍有多票竞争';
+      nodeAction = '三板尚未形成唯一性，不主观单押；等同梯队PK出唯一强势票后再看3进4。';
+    } else if (node2.length) {
+      nodeTitle = '中位已出清，节点二板候选已出现';
+      nodeAction = '次日先做2进3；多个分支同时存在时分仓跟随，出现唯一强势三板后，再考虑3进4。';
+      nodeLayer = 3;
+      nodePreferred = node2[0];
+    } else {
+      nodeTitle = '中位已出清，但没有合格节点二板/三板';
+      nodeAction = '不为交易而交易，等待新的节点二板出现。';
+    }
+    L.push('### 三、次日盘前计划');
+    L.push('');
+    L.push('**节点位置：' + nodeStage + '**');
+    L.push('');
+    L.push('- 锚定龙头：' + (anchor ? anchor.name + '（' + anchor.lb + '板）' : '无'));
+    L.push('- 中位状态：' + (cyc.mid_text || (midCleared ? '已出清' : '未出清')));
+    L.push('- 执行结论：**' + nodeTitle + '**。' + nodeAction);
+    L.push('');
+    if (nodePreferred) {
+      var np = nodePreferred;
+      var npBuy = np.close ? np.close * 1.1 : null;
+      L.push('**节点首选：' + np.name + '（' + (np.lbc || 1) + '板 · ' +
+        (np.bk || '其他') + ' · 首封 ' + hhmm(np.fbt) + '）**');
+      L.push('');
+      L.push('| 项目 | 计划 |');
+      L.push('|---|---|');
+      L.push('| 执行层级 | ' + (nodeLayer === 4 ? '3进4确认' : '2进3') + ' |');
+      L.push('| 打板参考价 | ' + (npBuy ? npBuy.toFixed(2) : '-') + ' |');
+      L.push('| 止损参考 | ' + (npBuy ? (npBuy * 0.95).toFixed(2) : '-') + ' |');
+      L.push('| 目标参考 | ' + (npBuy ? (npBuy * 1.05).toFixed(2) : '-') + ' |');
+      L.push('| 竞价确认 | ' + (kindOf(np) === '一字板' ? '一字只观察，不排板' :
+        (nodeLayer === 4 ? '必须强于同梯队并完成弱转强' : '高开带量，分歧转一致后再封')) + ' |');
+      L.push('| 放弃条件 | 竞价不及预期、同属性负反馈、炸板不回封、跌破止损 |');
+      L.push('');
+    }
+    var nodeList = nodeLayer === 4 ? node3 : node2;
+    if (nodeList.length) {
+      L.push('**节点候选与次日触发条件**');
+      L.push('');
+      L.push('| 个股 | 板数 | 题材 | 首封 | 涨停时间 | 换手 | 次日计划 |');
+      L.push('|---|---|---|---|---|---|---|');
+      nodeList.slice(0, 8).forEach(function (p) {
+        L.push('| ' + p.name + ' | ' + (p.lbc || 1) + '板 | ' + (p.bk || '其他') +
+          ' | ' + hhmm(p.fbt) + ' | ' + sealTime(p) + ' | ' + num(p.hs, 1) + '% | ' +
+          (p === nodePreferred ? '**首选：确认后执行**' : '观察竞价，同梯队PK后决定') + ' |');
+      });
+      L.push('');
+    } else if (nodeLayer) {
+      L.push('- 当前没有符合执行层级的非一字节点候选，明天不强行出手。');
+      L.push('');
+    }
+    L.push('**盘前执行顺序**');
+    L.push('');
+    L.push('1. **9:15–9:25**：先看锚定龙头和同题材反馈。龙头继续负反馈，降低所有补涨优先级。');
+    L.push('2. **节点层级**：2进3只做节点身位和弱转强；3进4只做同梯队唯一确认。');
+    L.push('3. **9:25–9:30**：竞价超预期且有板块联动才进入执行；不及预期直接删除。');
+    L.push('4. **封板质量**：优先早封、封单稳定、换手健康；一字、缩量强上强、14:45后偷板不追。');
+    L.push('5. **风控**：单笔止损参考打板价−5%；收盘未封视为失败；连续亏损后停止交易复盘。');
+    L.push('');
+    L.push('> 本计划按六篇文章的节点规则生成，只作盘前预案；9:25真实竞价和封板质量仍是最终确认条件。');
+    return L.join('\n');
 
     /* 三、负反馈 */
     L.push('### 三、当日负反馈');
@@ -4212,10 +4337,12 @@ function sectorLadders(pool){
   const out = [];
   Object.keys(by).forEach(bk => {
     const list = by[bk];
-    if (list.length < 2) return;            // 只有一只的题材不列
+    if (!list.length) return;
     const counts = {};                      // 板数 -> 只数
     list.forEach(p => { const l = Math.max(1, p.lbc || 1); counts[l] = (counts[l] || 0) + 1; });
     const maxLb = Math.max.apply(null, Object.keys(counts).map(Number));
+    // 单票只保留2板以上，避免大量首板孤票淹没梯队表。
+    if (list.length === 1 && maxLb < 2) return;
     const shape = [], missing = [];
     for (let i = maxLb; i >= 1; i--) {
       if (counts[i]) shape.push(i); else missing.push(i);
@@ -4225,6 +4352,7 @@ function sectorLadders(pool){
       (a.fbt || 9e9) - (b.fbt || 9e9));
     out.push({
       bk: bk, max_lb: maxLb, count: list.length, counts: counts, complete: complete,
+      tier: complete ? "大题材" : (list.length >= 3 ? "活跃题材" : (list.length === 1 ? "孤板" : "小题材")),
       missing: missing, missText: missing.length ? missing.map(n => n + "板").join("、") : "",
       shape: shape.join(""), leader: sorted[0].name, fbt: sorted[0].fbt,
       members: sorted.map(p => ({ name: p.name, lbc: Math.max(1, p.lbc || 1) }))
@@ -4709,7 +4837,9 @@ async function loadAuction() {
   groups.forEach((g, i) => {
     if (!g[1]) return;
     table("auc_t" + i, rows.filter(r => r.lv === g[0]), cols,
-      { sort: (a, b) => b.pctv - a.pctv,
+      { sort: (a, b) =>
+          ((recRank[a.symbol] || 999) - (recRank[b.symbol] || 999)) ||
+          (b.pctv - a.pctv),
         rowCls: r => (recRank[r.symbol] ? "rec" : "") });
   });
   const note = $("#aucPickNote");
@@ -5205,8 +5335,20 @@ function renderOverview() {
         r.complete ? '<span class="tag ok">完整</span>'
           : (r.missText ? '<span class="tag bad">缺 ' + esc(r.missText) + "</span>"
             : '<span class="tag">只有 ' + r.shape.length + " 档</span>") },
+    { key: "tier", label: "题材级别", left: true, render: r =>
+        '<span class="tag ' + (r.tier === "大题材" ? "ok" : r.tier === "孤板" ? "bad" : "") + '">' +
+          esc(r.tier) + "</span>" },
     { key: "bk", label: "题材", left: true },
     { key: "max_lb", label: "最高板", num: true, render: r => r.max_lb + " 板" },
+    { key: "node_stage", label: "节点阶段", left: true, render: r => {
+        const h = themeNodeHint(r.bk);
+        return '<span class="tag">' + esc(h.stage) + "</span>";
+      } },
+    { key: "node_action", label: "执行动作", left: true, render: r => {
+        const h = themeNodeHint(r.bk);
+        return '<span class="tag ' + (/3进4|2进3/.test(h.action) ? "rec" : "") + '">' +
+          esc(h.action) + "</span>";
+      } },
     { key: "shape", label: "梯队构成", left: true, render: r => r.shape.split("").map((c, i) =>
         '<span class="tag ' + (i === 0 ? "ok" : "") + '">' + c + "板" + r.counts[c] + "只</span>").join("") },
     { key: "count", label: "涨停家数", num: true },
@@ -5220,10 +5362,25 @@ function renderOverview() {
   const zt = (DATA.anchor.pool || []).filter(p => p.group === "涨停");
   const first = zt.filter(p => (p.lbc || 1) === 1);
   const firstRows = first.map(r => Object.assign({}, r, firstBoardQuality(r, first)));
+  const firstGroups = {};
+  firstRows.forEach(r => {
+    const k = String(marketThemeOf(r) || r.bk || "其他").trim() || "其他";
+    (firstGroups[k] = firstGroups[k] || []).push(r);
+  });
+  Object.keys(firstGroups).forEach(k => {
+    firstGroups[k].sort((a, b) => (a.fbt || 9e9) - (b.fbt || 9e9));
+    firstGroups[k].forEach((r, i) => {
+      r.sector_first_rank = i + 1;
+      r.i2_action = i === 0 ? "同题材一进二首选" : (i === 1 ? "同题材一进二次选" : "后排观察");
+    });
+  });
   $("#firstBox").innerHTML = "<h2>首板（当日 " + first.length + " 只，单独归类）</h2>" +
     "<div class='k'>按《情绪流》口径，模式一只做二板及以上；一进二质量检查已合并到本表。次日竞价高开2%~5%、二板量能和9:45前首封仍需次日确认。</div>" +
     "<div class='panel'><table id='t_first'></table></div>";
   table("t_first", firstRows, ZTCOLS.concat([
+    { key: "sector_first_rank", label: "板块首封排名", num: true, sortable: true, render: r => "#" + r.sector_first_rank },
+    { key: "i2_action", label: "一进二动作", left: true, render: r =>
+        '<span class="tag ' + (r.sector_first_rank <= 2 ? "rec" : "") + '">' + esc(r.i2_action) + "</span>" },
     { key: "first_turnover", label: "首板换手%", num: true, sortable: true, render: r => num(r.first_turnover, 1) },
     { key: "first_amount", label: "首板成交额", num: true, sortable: true, render: r => money(r.first_amount) },
     { key: "cap_yi", label: "流通市值", num: true, sortable: true, render: r => r.cap_yi == null ? "-" : num(r.cap_yi, 1) + "亿" },
@@ -5820,7 +5977,264 @@ function relayHintTags(symbol, row) {
   if (same.some(x => Number(x.lbc || 1) > lb) && lb >= 2) out.push("同题材有更高板");
   if (lb === 2 && !same.some(x => Number(x.lbc || 1) === 1)) out.push("无下位首板联动");
   (p.relay_tags || []).forEach(x => out.push(x));
+  const exec = nodeExecutionView();
+  if (exec && exec.preferred && exec.preferred.symbol === symbol) out.push("节点首选");
   return out;
+}
+
+const NODE_HISTORY_KEY = "nodeExecutionHistoryV1";
+const NODE_HISTORY_MAX = 30;
+
+function nodeHistoryLoad() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(NODE_HISTORY_KEY) || "[]");
+    return Array.isArray(rows) ? rows : [];
+  } catch (e) { return []; }
+}
+function nodeHistorySave(rows) {
+  try { localStorage.setItem(NODE_HISTORY_KEY, JSON.stringify((rows || []).slice(-NODE_HISTORY_MAX))); }
+  catch (e) { }
+}
+function nodeActionBoard(title) {
+  if (/3进4/.test(title)) return 4;
+  if (/2进3/.test(title)) return 3;
+  return 0;
+}
+function nodeHistoryValidate(rows, date, pool) {
+  const bySym = {};
+  (pool || []).forEach(p => { bySym[p.symbol] = p; });
+  rows.forEach(r => {
+    if (!r || r.hit !== null || !r.action_board || r.date >= date) return;
+    const syms = r.candidate_symbols || [];
+    const hit = syms.filter(s => {
+      const p = bySym[s];
+      return p && p.group === "涨停" && Number(p.lbc || 1) >= r.action_board;
+    });
+    r.hit = hit.length > 0;
+    r.validated_date = date;
+    r.hit_names = hit.map(s => (bySym[s] && bySym[s].name) || s);
+  });
+}
+function nodeHistoryRecord(view) {
+  if (!DATA || !DATA.meta || !view) return nodeHistoryLoad();
+  const date = DATA.meta.date;
+  const board = nodeActionBoard(view.title);
+  const candidates = view.candidates || [];
+  const rows = nodeHistoryLoad();
+  nodeHistoryValidate(rows, date, (DATA.anchor && DATA.anchor.pool) || []);
+  const rec = {
+    date: date,
+    title: view.title,
+    action_board: board,
+    preferred_symbol: view.preferred && view.preferred.symbol || "",
+    preferred_name: view.preferred && view.preferred.name || "",
+    candidate_symbols: candidates.map(x => x.symbol),
+    candidate_names: candidates.map(x => x.name),
+    hit: null,
+    validated_date: "",
+    hit_names: []
+  };
+  const idx = rows.findIndex(x => x && x.date === date);
+  if (idx >= 0) {
+    const old = rows[idx];
+    rec.hit = old.hit === undefined ? null : old.hit;
+    rec.validated_date = old.validated_date || "";
+    rec.hit_names = old.hit_names || [];
+    rows[idx] = rec;
+  } else {
+    rows.push(rec);
+  }
+  nodeHistorySave(rows);
+  return rows;
+}
+function nodeHistorySummary(rows) {
+  const done = (rows || []).filter(x => x && x.hit === true || x && x.hit === false);
+  const hit = done.filter(x => x.hit).length;
+  const pending = (rows || []).filter(x => x && x.hit === null).length;
+  return done.length
+    ? "节点历史 " + hit + "/" + done.length + " 命中 · " + pending + " 条待验证"
+    : "节点历史刚开始记录，至少等下一个交易日才能验证";
+}
+function nodeHistoryHtml(rows) {
+  if (!rows || !rows.length) return "";
+  const recent = rows.slice(-8).reverse().map(r => {
+    const result = r.hit === true ? "命中" : (r.hit === false ? "未命中" : "待验证");
+    return '<div class="node-history-row"><span><b>' + esc(r.date || "-") + '</b> · ' +
+      esc(r.title || "节点记录") + '</span><span>' + esc(result) +
+      (r.hit_names && r.hit_names.length ? " · " + esc(r.hit_names.join("、")) : "") +
+      '</span></div>';
+  }).join("");
+  return '<details class="node-history"><summary>查看最近节点执行记录与验证</summary>' +
+    recent + '</details>';
+}
+function themeNodeHint(bk) {
+  const exec = nodeExecutionView();
+  if (!exec) return { stage: "待计算", action: "观察" };
+  const cand = (exec.candidates || []).find(x => x.theme === bk);
+  if (cand) {
+    const action = /3进4/.test(exec.title) ? "3进4确认" : (/2进3/.test(exec.title) ? "2进3" : "节点观察");
+    return { stage: cand.path + " · " + exec.cohortText, action: action };
+  }
+  if (exec.anchorTheme && exec.anchorTheme === bk) return { stage: "旧龙头主线", action: "看龙头反馈" };
+  return { stage: "非节点分支", action: "观察" };
+}
+function promotionNodeHint(from) {
+  const exec = nodeExecutionView();
+  if (!exec) return "观察";
+  if (Number(from) === 2 && /2进3/.test(exec.title)) return "节点主攻";
+  if (Number(from) === 3 && /3进4/.test(exec.title)) return "唯一确认";
+  if (Number(from) >= 3) return "中位观察";
+  return "普通接力";
+}
+function threeMostText(view) {
+  if (!view) return "";
+  const themeCount = {};
+  ((DATA.anchor && DATA.anchor.pool) || []).filter(x => x.group === "涨停").forEach(x => {
+    const k = String(marketThemeOf(x) || x.bk || "其他").trim() || "其他";
+    themeCount[k] = (themeCount[k] || 0) + 1;
+  });
+  const theme = Object.keys(themeCount).sort((a, b) => themeCount[b] - themeCount[a])[0] || "无";
+  const position = view.preferred
+    ? view.preferred.name + "·" + view.preferred.lb + "板" +
+      (view.candidates.length === 1 ? "·唯一" : "·仍有PK")
+    : "无候选";
+  const feedback = (view.candidates || []).slice().sort((a, b) =>
+    (a.fbt || 999999) - (b.fbt || 999999))[0];
+  return "三最证据：题材 " + theme + "(" + (themeCount[theme] || 0) + "只) · 身位 " +
+    position + " · 反馈 " + (feedback ? feedback.name + "首封" + hhmm(feedback.fbt) : "暂无");
+}
+
+function nodeExecutionView() {
+  if (!DATA) return null;
+  const cyc = DATA.cycle || {};
+  const anchor = cyc.dragon || null;
+  const zt = ((DATA.anchor && DATA.anchor.pool) || []).filter(x => x.group === "涨停");
+  const two = zt.filter(x => Number(x.lbc || 1) === 2);
+  const three = zt.filter(x => Number(x.lbc || 1) === 3);
+  const mid3Total = Number(cyc.mid3_total || 0);
+  const mid4Total = Number(cyc.mid4_total || 0);
+  const mid3Left = Number(cyc.mid3_left || 0);
+  const mid4Left = Number(cyc.mid4_left || 0);
+  const hasMid = mid3Total + mid4Total > 0;
+  const midCleared = hasMid && mid3Left === 0 && mid4Left === 0;
+  const breakAge = cyc.break_age === null || cyc.break_age === undefined
+    ? null : Number(cyc.break_age);
+  const phase = (DATA.meta && DATA.meta.phase) || "混沌";
+  const anchorMeta = anchor ? ((DATA.anchor && DATA.anchor.leaders) || [])
+    .find(x => x.symbol === anchor.symbol) : null;
+  const anchorTheme = String((anchorMeta && anchorMeta.bk) || "").trim();
+  const anchorNow = anchor ? zt.find(x => x.symbol === anchor.symbol) ||
+    ((DATA.anchor && DATA.anchor.pool) || []).find(x => x.symbol === anchor.symbol) : null;
+  const breakPath = cyc.dragon_active
+    ? "旧龙仍封板，情绪延续"
+    : (anchorNow && anchorNow.group === "涨停")
+      ? "断板后已回封，退潮可能延后"
+      : (anchorNow && Number(anchorNow.today_pct) >= 0)
+        ? "断板后收红，有修复但尚未反包"
+        : "断板后未反包，等待中位出清";
+  const cohortText = breakAge === null ? "节点位置未知"
+    : breakAge <= 1 ? "断板当天2板"
+    : breakAge === 2 ? "断板次日2板"
+    : breakAge === 3 ? "断板第3日2板"
+    : "断板第4日及以后的新周期2板";
+  const midText = cyc.mid_text || ("三板" + (mid3Left ? "剩" + mid3Left + "只" : "无样本或已出清") +
+    " · 四板" + (mid4Left ? "剩" + mid4Left + "只" : "无样本或已出清"));
+  let tone = "wait", title = "节点条件未满足", action = "先观察，不启动首阴接力。";
+  let candidates = [];
+
+  if (!anchor || Number(anchor.lb || 0) < 5) {
+    tone = "muted";
+    title = "当前没有5板以上市场级锚定龙头";
+    action = "普通3板、4板断板不产生本模式的首阴节点；只做普通接力观察。";
+  } else if (cyc.dragon_active) {
+    title = "龙头仍在延续，首阴节点未触发";
+    action = "不做首阴节点票，按原有打板评分观察龙头及主线核心。";
+  } else if (breakAge === 1) {
+    title = "龙头断板第1天 · 节点刚形成";
+    action = "断板当天停止2进3，不接同属性补涨；重点观察3板以上中位是否开始批量出清。";
+    candidates = two.filter(x => !x.yizi).slice(0, 6);
+  } else if (!midCleared) {
+    tone = "wait";
+    title = "中位尚未完全出清";
+    action = "今天只跟踪各分支身位2板和龙头反馈，不把2进3当作确定性买点；等中位出清或龙头超预期反包。";
+    candidates = two.filter(x => !x.yizi).slice(0, 6);
+  } else if (breakAge >= 4 && !three.length) {
+    tone = "done";
+    title = "中位已出清 · 进入新周期节点窗口";
+    action = "第4天及以后出现的2板属于新周期节点票；明天的执行层级是2进3，不直接追老周期3板、4板。";
+    candidates = two.filter(x => !x.yizi).slice(0, 6);
+  } else if (three.length === 1 && !three[0].yizi) {
+    tone = "done";
+    title = "中位出清 · 同梯队三板唯一";
+    action = "明天的高确定性确认层级是3进4；必须先看竞价、承接和能否弱转强，不能仅凭唯一性直接无条件买。";
+    candidates = three;
+  } else if (three.length > 1) {
+    title = "中位出清 · 三板仍有多票竞争";
+    action = "三板尚未形成唯一性，不主观单押；先看同梯队PK，胜出的唯一强势票再到3进4确认。";
+    candidates = three.slice(0, 6);
+  } else if (two.length) {
+    tone = "done";
+    title = "中位已出清 · 节点二板候选已出现";
+    action = "明天先执行2进3：多个分支同时存在时分仓跟随，出现同梯队唯一强势票后，次日再考虑3进4加仓。";
+    candidates = two.filter(x => !x.yizi).slice(0, 6);
+  } else {
+    tone = "bad";
+    title = "中位已出清，但没有合格节点二板/三板";
+    action = "不为了交易而交易；等待新的节点二板出现。";
+  }
+
+  const ranked = candidates.slice().sort((a, b) =>
+    (a.yizi ? 1 : 0) - (b.yizi ? 1 : 0) ||
+    (Number(a.fbt || 999999) - Number(b.fbt || 999999)) ||
+    String(a.name || "").localeCompare(String(b.name || ""), "zh"));
+  const candidateRows = ranked.map(x => ({
+    symbol: x.symbol, name: x.name, lb: Number(x.lbc || 1),
+    theme: marketThemeOf(x) || x.bk || "其他",
+    yizi: !!x.yizi, fbt: x.fbt || 0,
+    path: anchorTheme
+      ? ((String(marketThemeOf(x) || x.bk || "其他").trim() === anchorTheme) ? "内切" : "外切")
+      : "路径待定"
+  }));
+  return {
+    tone, title, action, anchor, breakAge, phase, midCleared, midText,
+    anchorTheme, cohortText, breakPath,
+    preferred: candidateRows.length ? candidateRows[0] : null,
+    candidates: candidateRows
+  };
+}
+
+function nodeExecutionHtml() {
+  const view = nodeExecutionView();
+  if (!view) return "";
+  const historyRows = nodeHistoryRecord(view);
+  const anchorText = view.anchor
+    ? esc(view.anchor.name + " · " + view.anchor.lb + "板 · 断板后第" +
+        (view.breakAge === null ? "-" : view.breakAge) + "个交易日")
+    : "无有效锚定龙头";
+  const tags = view.candidates.length
+    ? view.candidates.map(x => '<span class="tag ' + (x.yizi ? "hi" : "ok") + '">' +
+        esc(x.name + " · " + x.lb + "板 · " + x.theme + " · " + x.path + (x.yizi ? " · 一字" : "")) + "</span>").join("")
+    : '<span class="tag">暂无合格候选</span>';
+  const preferred = view.preferred
+    ? '<div class="node-exec-action">节点首选：<b>' + esc(view.preferred.name) +
+      '</b> · ' + esc(view.preferred.lb + "板 · " + view.preferred.theme) +
+      ' · 首封 ' + esc(hhmm(view.preferred.fbt)) + '</div>'
+    : "";
+  return '<div class="node-exec-card ' + esc(view.tone) + '">' +
+    '<div class="node-exec-head"><b>' + esc(view.title) + '</b><span>收盘决策 · ' +
+      esc(view.phase) + ' · ' + esc(view.cohortText) + '</span></div>' +
+    '<div class="node-exec-action">' + esc(view.action) + '</div>' +
+    '<div class="node-exec-meta">' + anchorText + ' · ' + esc(view.midText) +
+      ' · ' + (view.midCleared ? "中位已出清" : "中位未出清") +
+      (view.anchorTheme ? ' · 锚定题材：' + esc(view.anchorTheme) : '') + '</div>' +
+    '<div class="node-exec-meta">断板路径：' + esc(view.breakPath) + '</div>' +
+    '<div class="node-exec-meta">' + esc(threeMostText(view)) + '</div>' +
+    preferred +
+    '<div class="node-exec-names">' + tags + '</div>' +
+    '<div class="node-exec-meta">' + esc(nodeHistorySummary(historyRows)) + '</div>' +
+    nodeHistoryHtml(historyRows) +
+    '<div class="relay-auction-note">这是按六篇文章规则生成的执行层级提示，不会修改原有打板评分和推荐顺序。竞价弱转强、封板质量与止损仍须单独确认。</div>' +
+    '</div>';
 }
 
 function renderLeaderRelay() {
@@ -5841,7 +6255,8 @@ function renderLeaderRelay() {
     if (hint) hint.innerHTML =
       '<div class="relay-auction-card"><div class="relay-auction-head">' +
       '<b>龙头接力 · 暂无数据</b><span>连板历史不足</span></div>' +
-      '<div class="relay-auction-note">需要当日复盘中的连板历史才能判断5板及以上首阴节点；先完成一次数据更新。</div></div>';
+      '<div class="relay-auction-note">需要当日复盘中的连板历史才能判断5板及以上首阴节点；先完成一次数据更新。</div></div>' +
+      nodeExecutionHtml();
     return;
   }
   badge.textContent = view.node.title;
@@ -5907,7 +6322,8 @@ function renderLeaderRelay() {
             esc(x.name + " · " + x.role.replace("候选", "") + " · " + x.lb + "板") + '</span>').join("")
         : '<span class="tag ' + (view.oldBroken ? "bad" : "") + '">' + esc(view.node.title) + '</span>') +
       '</div><div class="relay-auction-note">' + esc(view.node.text) +
-      ' ' + esc(crossText) + '。只作接力观察，不改现有打板评分。</div></div>';
+      ' ' + esc(crossText) + '。只作接力观察，不改现有打板评分。</div></div>' +
+      nodeExecutionHtml();
   }
 }
 
@@ -6186,6 +6602,10 @@ function renderM1() {
     { key: "prev", label: "昨日家数", num: true },
     { key: "promoted", label: "今日晋级", num: true },
     { key: "rate", label: "晋级率", num: true, render: r => num(r.rate, 1) + "%" },
+    { key: "node_action", label: "节点动作", left: true, render: r => {
+        const t = promotionNodeHint(r.from);
+        return '<span class="tag ' + (/节点主攻|唯一确认/.test(t) ? "rec" : "") + '">' + esc(t) + "</span>";
+      } },
     { key: "names", label: "晋级个股", left: true, render: r => (r.names || []).map(n => '<span class="tag">' + esc(n) + "</span>").join("") },
   ]);
   levels.forEach(n => table("m1_lv" + n, groups[n], ZTCOLS, {
