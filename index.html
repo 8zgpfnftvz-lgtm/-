@@ -4691,8 +4691,8 @@ async function loadAuction() {
           : (hiRank[r.symbol]
             ? '<span class="tag hi">高度板 · 观察</span> '
             : "")) + esc(r.name || "") },
-    { key: "gene", label: "股性", num: true, sortable: true,
-      sortVal: r => (geneOf(r.symbol) || [0])[0], render: r => geneTag(r.symbol) },
+    { key: "price", label: "现价", num: true, render: r => num(r.price) },
+    { key: "pctv", label: "竞价涨幅", num: true, cls: r => cls(r.pctv), render: r => pct(r.pctv, 2) },
     { key: "lb", label: "几天几板", num: true, sortable: true,
       sortVal: r => tbVal(auctionRow(r)), render: r => aucBan(r) },
     { key: "relay_hint", label: "节点提示", left: true, render: r => {
@@ -4700,9 +4700,8 @@ async function loadAuction() {
         return hs.length ? hs.map(t => '<span class="tag">' + esc(t) + "</span>").join("") : "-";
       } },
     { key: "kindLabel", label: "昨日类型", left: true },
-    { key: "pre", label: "昨收", num: true, render: r => num(r.pre) },
-    { key: "price", label: "现价", num: true, render: r => num(r.price) },
-    { key: "pctv", label: "高开", num: true, cls: r => cls(r.pctv), render: r => pct(r.pctv, 2) },
+    { key: "gene", label: "股性", num: true, sortable: true,
+      sortVal: r => (geneOf(r.symbol) || [0])[0], render: r => geneTag(r.symbol) },
     { key: "lv", label: "判定", left: true, render: r =>
         '<span class="tag ' + (r.lv === "超预期" ? "ok" : r.lv === "不及预期" ? "bad" : "") + '">' + r.lv + "</span>" },
     { key: "rule", label: "标准", left: true, render: r => '<span class="k">' + esc(r.rule) + "</span>" },
