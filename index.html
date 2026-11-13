@@ -4838,7 +4838,10 @@ async function loadAuction() {
     if (!g[1]) return;
     table("auc_t" + i, rows.filter(r => r.lv === g[0]), cols,
       { sort: (a, b) =>
-          ((recRank[a.symbol] || 999) - (recRank[b.symbol] || 999)) ||
+          ((hiRank[a.symbol] ? hiRank[a.symbol] :
+            (recRank[a.symbol] ? 100 + recRank[a.symbol] : 999)) -
+           (hiRank[b.symbol] ? hiRank[b.symbol] :
+            (recRank[b.symbol] ? 100 + recRank[b.symbol] : 999))) ||
           (b.pctv - a.pctv),
         rowCls: r => (recRank[r.symbol] ? "rec" : "") });
   });
