@@ -4821,12 +4821,17 @@ function exSave(o) {
 function saveExecPlan(items) {
   const cur = exLoad();
   const st = {};
+  const prev = {};
+  (cur.items || []).forEach(it => { prev[it.symbol] = it; });
   const relayRoles = relayRoleMap();
   (cur.items || []).forEach(it => { if (cur.status && cur.status[it.symbol]) st[it.symbol] = cur.status[it.symbol]; });
   exSave({
     date: snapToday(),
     items: (items || []).map(p => ({
       symbol: p.symbol, name: p.name, lb: p.lb, score: p.score, kind: p.kindLabel || "",
+      auc_pct: p.pctv !== null && p.pctv !== undefined
+        ? p.pctv
+        : (prev[p.symbol] && prev[p.symbol].auc_pct !== undefined ? prev[p.symbol].auc_pct : null),
       hit: p.hit, stop: p.stop, price: p.price || null, bk: p.bk, why: p.why || "",
       relay_role: relayRoles[p.symbol] || p.relay_role || ""
     })),
@@ -4877,6 +4882,9 @@ function renderTrade() {
     { key: "name", label: "个股", left: true },
     { key: "price", label: "现价", num: true, sortable: true, render: r => num(r.price) },
     { key: "lb", label: "板数", num: true, render: r => r.lb ? r.lb + " 板" : "-" },
+    { key: "auc_pct", label: "竞价涨幅", num: true, sortable: true,
+      cls: r => cls(r.auc_pct), render: r =>
+        r.auc_pct === null || r.auc_pct === undefined || isNaN(r.auc_pct) ? "—" : pct(r.auc_pct, 2) },
     { key: "score", label: "分", num: true, sortable: true },
     { key: "kind", label: "昨日类型", left: true },
     { key: "relay_role", label: "接力位", left: true, render: r =>
@@ -7855,7 +7863,7 @@ $("#exAddBtn").addEventListener("click", async () => {
   const hit = pre ? +(pre * 1.1).toFixed(2) : null;
   ex.items.push({
     symbol: sym, name: v.name || (poolRow && poolRow.name) || c,
-    lb: (poolRow && poolRow.lbc) || null, score: null,
+    lb: (poolRow && poolRow.lbc) || null, score: null, auc_pct: null,
     kind: (poolRow && poolRow.group === "涨停") ? "昨日涨停" : "",
     hit: hit, stop: hit ? +(hit * 0.95).toFixed(2) : null,
     bk: (poolRow && poolRow.bk) || "", why: "手动加入",
