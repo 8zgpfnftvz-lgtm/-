@@ -140,11 +140,19 @@ tbody tr:hover{background:var(--soft)}
 #auc_anchor .tag{font-size:10px;line-height:17px;padding:1px 6px}
 #auc_anchor .ancDel{height:22px;min-width:34px;padding:1px 7px;border-radius:6px;
   font-size:10.5px;line-height:18px;vertical-align:middle}
+#limitChart [data-symbol]{cursor:pointer}
+#limitChart [data-symbol]:focus{outline:none}
+#limitChart [data-symbol]:hover{filter:brightness(1.12)}
 #aucCards{grid-template-columns:repeat(auto-fit,minmax(138px,1fr));gap:7px}
 #aucCards .card{height:84px;padding:8px 10px;border-radius:11px}
 #aucCards .v{font-size:17px}
 #aucCards .v.s{font-size:13.5px}
 #aucCards .k{font-size:10.5px;line-height:1.3}
+.auc-final-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:7px 10px;margin-bottom:7px;border:1px solid rgba(224,139,0,.35);border-radius:9px;
+  background:rgba(224,139,0,.09);font-size:11.5px}
+.auc-final-head b{color:#b56d00}
+.auc-final-head span{color:var(--muted);font-size:10.5px;text-align:right}
 .tag{display:inline-block;padding:1px 7px;border-radius:999px;background:var(--soft);
   color:var(--muted);font-size:12px;margin-right:4px}
 .tag.ok{background:var(--accent);color:#fff}
@@ -716,7 +724,24 @@ tbody tr:hover td .lnk{text-decoration:underline}
     今天还收红的（最后一列）比继续阴跌的更值得跟。
   </div>
 
-  <h3>③ 连续 2~3 日阳线 · 量价齐升 · 底部抬高（今日未涨停）</h3>
+  <h3>③ 首板涨停后回调反包 · 尾盘买点（首板后1~3日）</h3>
+  <div class="bar">
+    <div><div class="k">筛选</div></div>
+    <button type="button" class="fbF on" data-ff="tail">尾盘标准版</button>
+    <button type="button" class="fbF" data-ff="strict">严格版：缩量≤0.6＋站上MA5</button>
+    <button type="button" class="fbF" data-ff="low">60日低位</button>
+    <button type="button" class="fbF" data-ff="sector">有同板块涨停</button>
+    <button type="button" class="fbF" data-ff="all">全部观察</button>
+    <span class="k" id="fanInfo"></span>
+  </div>
+  <div class="panel"><table id="t_fanbao"></table></div>
+  <div class="k" style="margin-top:10px">
+    原策略口径：首板后不出现二次涨停，回调不低于首板收盘价的 <b>−8%</b>；回调期均量不高于首板量的
+    <b>0.7倍</b>，收盘站上 <b>MA10</b>，首板后 <b>1~3个交易日</b> 的尾盘介入。
+    严格档为缩量≤0.6并站上MA5。次日涨停按连板处理，未涨停则收盘退出；跌破信号日低点或MA10止损。
+  </div>
+
+  <h3>④ 连续 2~3 日阳线 · 量价齐升 · 底部抬高（今日未涨停）</h3>
   <div class="bar">
     <div><div class="k">筛选</div></div>
     <button type="button" class="vrF on" data-vf="all">全部</button>
@@ -731,7 +756,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
     今天必须<b>没有涨停</b>；只排除 <b>688</b> 开头。连续到第 4 天就不再列为新信号，避免追高。
   </div>
 
-  <h3>④ 近4个交易日有过长下影线（下影线≥5% · 最低点跌幅≥5% · 近20日涨停过 · 剔除当日涨停）</h3>
+  <h3>⑤ 近4个交易日有过长下影线（下影线≥5% · 最低点跌幅≥5% · 近20日涨停过 · 剔除当日涨停）</h3>
   <div class="bar">
     <div><div class="k">只选沪深主板，剔除ST；按发生日期和下影线长度排序</div></div>
     <span class="k" id="lshadowInfo"></span>
@@ -4128,6 +4153,28 @@ function pickBoards(rows, ladders, poolItems) {
     else if (mates.length === 2) { score += 1; why.push("板块" + bk + "有跟风"); }
     else { why.push("同题材独苗"); }
     if (lads[bk] && lads[bk].complete) { score += 2; why.push("题材梯队完整"); }
+    /* 板块反馈：同题材候选在本次竞价中的超预期/符合/不及预期分布。 */
+    const peers = rows.filter(x => {
+      if (!x || x.symbol === r.symbol) return false;
+      const pp = x._p || {};
+      return (String(marketThemeOf(pp) || "其他").trim() || "其他") === bk;
+    });
+    const peerSup = peers.filter(x => x.lv === "超预期").length;
+    const peerOk = peers.filter(x => x.lv === "符合").length;
+    const peerBad = peers.filter(x => x.lv === "不及预期").length;
+    const peerN = peers.length;
+    let feedbackScore = 0;
+    if (peerN) {
+      if (peerSup >= 2 || peerSup / peerN >= 0.5) feedbackScore += 2;
+      else if (peerSup > 0 || peerOk >= 2) feedbackScore += 1;
+      if (peerBad >= 2 && peerBad / peerN >= 0.5) feedbackScore -= 2;
+      else if (peerBad > peerSup + peerOk) feedbackScore -= 1;
+      score += feedbackScore;
+      why.push("板块反馈超" + peerSup + "/符" + peerOk + "/弱" + peerBad +
+        (feedbackScore > 0 ? "·加分" : feedbackScore < 0 ? "·减分" : "·中性"));
+    } else {
+      why.push("板块反馈暂无同题材样本");
+    }
     /* 板级强度：上板时间 + 封单 + 炸板次数 + 同板数量（判断"这个板够不够硬"） */
     const fbt = p.fbt || 0, lbt = p.lbt || fbt, zbc = p.zbc || 0;
     const sealT = zbc > 0 ? lbt : fbt;                    // 炸过以最后回封为准
@@ -4182,6 +4229,8 @@ function pickBoards(rows, ladders, poolItems) {
       check_fail: checks.filter(x => x.v === false).length,
       sector_first_n: sectorFirstN, cap_yi: capYi, first_turnover: p.hs,
       first_amount: p.amount, a_kill: !!p.a_kill, tail_steal: !!p.tail_steal,
+      peer_sup: peerSup, peer_ok: peerOk, peer_bad: peerBad,
+      peer_feedback: peerN ? ("超" + peerSup + "/符" + peerOk + "/弱" + peerBad) : "无同题材样本",
       score: score, why: why.join("；")
     });
   });
@@ -4516,6 +4565,8 @@ async function loadAuction() {
   });
   /* ---------- 打哪一个：直接在下面的表里标出来 ---------- */
   const picks = pickBoards(rows, ladders, pool.items);
+  const pickFeedback = {};
+  picks.forEach(p => { pickFeedback[p.symbol] = p.peer_feedback || "无同题材样本"; });
   const playable = picks.filter(p => p.score >= REC_MIN);
   const recRank = {};
   playable.slice(0, 3).forEach((p, i) => { recRank[p.symbol] = i + 1; });
@@ -4553,6 +4604,12 @@ async function loadAuction() {
             : "")) + esc(r.name || "") },
     { key: "price", label: "现价", num: true, render: r => num(r.price) },
     { key: "pctv", label: "竞价涨幅", num: true, cls: r => cls(r.pctv), render: r => pct(r.pctv, 2) },
+    { key: "peer_feedback", label: "板块反馈", left: true, render: r => {
+        const text = pickFeedback[r.symbol] || "无同题材样本";
+        const bad = /弱([2-9]|\d{2,})/.test(text);
+        const good = /超([2-9]|\d{2,})/.test(text);
+        return '<span class="tag ' + (bad ? "bad" : good ? "ok" : "") + '">' + esc(text) + "</span>";
+      } },
     { key: "lb", label: "几天几板", num: true, sortable: true,
       sortVal: r => tbVal(auctionRow(r)), render: r => aucBan(r) },
     { key: "relay_hint", label: "节点提示", left: true, render: r => {
@@ -4605,6 +4662,13 @@ async function loadAuction() {
       esc(L.best.name) + "（强度" + L.best.strength + "）").join("；") +
       "。<br>1进2、2进3优先高开带量的低吸/首封；3进4以上优先非一字、成交放大后的弱转强，不追高位一致加速。";
   }
+  const _clock = new Date();
+  const _mins = _clock.getHours() * 60 + _clock.getMinutes();
+  const _execState = _mins < 565 ? "等待9:25最终竞价，9:30前给出执行结论"
+    : (_mins <= 570 ? "9:25竞价已锁定，9:30前执行"
+      : "已过9:30，不再新增打板，以下仅供复盘");
+  note.innerHTML = '<div class="auc-final-head"><b>9:30前推荐打板</b><span>' +
+    esc(_execState) + '</span></div>' + note.innerHTML;
   // 只在竞价时段（9:15–9:35）生成/更新今日执行清单，避免盘中/盘后用收盘价覆盖
   const _n = new Date(), _m = _n.getHours() * 60 + _n.getMinutes();
   if (AUC.forcePlan || (_m >= 555 && _m <= 575)) {
@@ -4721,6 +4785,40 @@ function exSave(o) {
   a[o.date] = o;
   try { localStorage.setItem(EX_KEY, JSON.stringify(a)); } catch (e) { }
 }
+function tradeExpectation(p) {
+  if (!p) return "-";
+  const lb = Number(p.lb || 0);
+  let text;
+  if (/一字/.test(p.kind || p.kindLabel || "") && lb >= 3) {
+    text = "高位一字只观察，不排板";
+  } else if (lb <= 1) {
+    text = "1进2：高开2%~5%，二板量能放大后确认";
+  } else if (lb === 2) {
+    text = "2进3：竞价超预期，走弱转强/分歧转一致";
+  } else if (lb === 3) {
+    text = "3进4：同梯队唯一＋强承接才确认";
+  } else {
+    text = "高度板：只做弱转强，不追一致加速";
+  }
+  if (p.peer_feedback && p.peer_feedback !== "无同题材样本") {
+    text += "；板块" + p.peer_feedback;
+  }
+  return text;
+}
+function tradeAuctionStatus(r) {
+  if (r && r.auc_lv) return r.auc_lv;
+  const now = new Date();
+  const tradeDay = now.getDay() >= 1 && now.getDay() <= 5;
+  const mins = now.getHours() * 60 + now.getMinutes();
+  if (tradeDay && mins < 565 && (r.auc_pct === null || r.auc_pct === undefined))
+    return "待9:25确认";
+  if (!tradeDay && (r.auc_pct === null || r.auc_pct === undefined))
+    return "无当日竞价数据";
+  if (r.auc_pct === null || r.auc_pct === undefined || isNaN(r.auc_pct))
+    return "无竞价数据";
+  if (!AUC_RULES[r.kind]) return "类型未判定";
+  return aucJudge(r.kind, Number(r.auc_pct));
+}
 function saveExecPlan(items) {
   const cur = exLoad();
   const st = {};
@@ -4735,6 +4833,8 @@ function saveExecPlan(items) {
       auc_pct: p.pctv !== null && p.pctv !== undefined
         ? p.pctv
         : (prev[p.symbol] && prev[p.symbol].auc_pct !== undefined ? prev[p.symbol].auc_pct : null),
+      auc_lv: p.lv || (prev[p.symbol] && prev[p.symbol].auc_lv) || null,
+      expect: p.expect || tradeExpectation(p),
       hit: p.hit, stop: p.stop, price: p.price || null, bk: p.bk, why: p.why || "",
       relay_role: relayRoles[p.symbol] || p.relay_role || ""
     })),
@@ -4790,6 +4890,15 @@ function renderTrade() {
         r.auc_pct === null || r.auc_pct === undefined || isNaN(r.auc_pct) ? "—" : pct(r.auc_pct, 2) },
     { key: "score", label: "分", num: true, sortable: true },
     { key: "kind", label: "昨日类型", left: true },
+    { key: "expect", label: "预期", left: true, render: r =>
+        '<span class="tag ' + (/3进4|高度板/.test(r.expect || "") ? "hi" : "ok") + '">' +
+          esc(r.expect || tradeExpectation(r)) + "</span>" },
+    { key: "auc_lv", label: "是否符合预期", left: true, render: r => {
+        const lv = tradeAuctionStatus(r);
+        const tone = lv === "超预期" || lv === "符合" ? "ok" :
+          (lv === "不及预期" ? "bad" : "");
+        return '<span class="tag ' + tone + '">' + esc(lv) + "</span>";
+      } },
     { key: "relay_role", label: "接力位", left: true, render: r =>
         r.relay_role ? '<span class="tag ' + (/换手/.test(r.relay_role) ? "rec" : /二波/.test(r.relay_role) ? "hi" : "ok") + '">' +
           esc(r.relay_role) + "</span>" : "-" },
@@ -5103,6 +5212,15 @@ function renderOverview() {
       r.i2_action = i === 0 ? "同题材一进二首选" : (i === 1 ? "同题材一进二次选" : "后排观察");
     });
   });
+  firstRows
+    .filter(r => !r.yizi && r.first_check_pass >= 5)
+    .sort((a, b) =>
+      (b.first_check_pass - a.first_check_pass) ||
+      (a.sector_first_rank - b.sector_first_rank) ||
+      (b.sector_first_n - a.sector_first_n) ||
+      ((a.fbt || 9e9) - (b.fbt || 9e9)))
+    .slice(0, 2)
+    .forEach((r, i) => { r.i2_global_rank = i + 1; });
   $("#firstBox").innerHTML = "<h2>首板（当日 " + first.length + " 只，单独归类）</h2>" +
     "<div class='k'>按《情绪流》口径，模式一只做二板及以上；一进二质量检查已合并到本表。次日竞价高开2%~5%、二板量能和9:45前首封仍需次日确认。</div>" +
     "<div class='panel'><table id='t_first'></table></div>";
@@ -5694,9 +5812,8 @@ function relayHintTags(symbol, row) {
   const p = (row && row._p) || ((DATA && DATA.anchor && DATA.anchor.pool) || [])
     .find(x => x.symbol === symbol) || {};
   const lb = Number((row && row.lb) || p.lbc || 0);
-  if (view.marketNode) out.push("5板及以上首阴节点");
-  if (view.prevMidRows.length) out.push(view.midCleared ? "中位已出清" : "中位未出清");
-  if (view.iceThreeCount) out.push("冰点三板" + view.iceThreeCount + "只");
+  if ((view.prevMidRows || []).some(x => x.symbol === symbol) && !view.midCleared)
+    out.push("首阴中位·待出清");
   const cand = view.candidates.find(x => x.symbol === symbol);
   if (cand) {
     out.push("节点" + cand.lb + "进" + (cand.lb + 1));
@@ -6222,7 +6339,8 @@ function renderLimitLifecycle() {
           const boxH = compactChart ? 18 : 16;
           svg += '<rect x="' + x.toFixed(1) + '" y="' + (y - boxH / 2).toFixed(1) + '" width="' +
             bw.toFixed(1) + '" height="' + boxH + '" rx="2.8" fill="' + color + '" opacity="' +
-            (r.current ? "0.96" : "0.68") + '"><title>' +
+            (r.current ? "0.96" : "0.68") + '" data-symbol="' + esc(r.symbol) +
+            '" data-name="' + esc(r.name) + '" role="button" tabindex="0"><title>' +
             esc(r.name + " · " + dates[i] + " · " + lb + "板 · " +
               (r.current ? "连板中" : r.status)) + '</title></rect>';
           if (bw >= 34) {
@@ -6300,12 +6418,17 @@ function stockActionTag(r) {
   if (!r) return null;
   const lb = Number(r.lbc || r.lb || 1);
   const exec = nodeExecutionView();
+  const relay = leaderRelayView();
   if (lb === 1) {
-    if (r.sector_first_rank === 1) return { text: "1进2首选", cls: "rec" };
-    if (r.sector_first_rank === 2) return { text: "1进2次选", cls: "ok" };
+    if (r.i2_global_rank === 1) return { text: "1进2首选", cls: "rec" };
+    if (r.i2_global_rank === 2) return { text: "1进2次选", cls: "ok" };
     return { text: "1进2观察", cls: "" };
   }
   if (!exec) return { text: lb + "进" + (lb + 1) + "观察", cls: "" };
+  if (relay && !relay.midCleared &&
+      (relay.prevMidRows || []).some(x => x.symbol === r.symbol)) {
+    return { text: "首阴中位·待出清", cls: "bad" };
+  }
   const candidate = (exec.candidates || []).find(x => x.symbol === r.symbol);
   if (lb === 2) {
     if (exec.layer === 3 && candidate) {
@@ -6788,6 +6911,9 @@ async function enrichMonitorTrend() {
 function renderMonitor() {
   if (!DATA) return;
   const all = DATA.monitor || [];
+  const fans = DATA.fanbao || [];
+  const tailFans = fans.filter(r => r.vshrink !== null && r.vshrink <= 0.7 &&
+    r.above_ma10 && r.days_since >= 1 && r.days_since <= 3 && r.low_vs_close >= -8);
   const strict = all.filter(r => r.days >= 15 && r.amp <= 15);
   const f = MON_FILTER;
   let rows = all;
@@ -6801,6 +6927,8 @@ function renderMonitor() {
       "启动首板后横盘≥15日，箱体振幅≤15%", strict.length ? "up" : "") +
     card("近4日冲高回落", String((DATA.rollover || []).length) + " 只",
       "冲高≥6% 回落≥3% · 当日收红柱 · 只主板 · 已剔除 5/10 日线向下", (DATA.rollover || []).length ? "up" : "") +
+    card("首板回调·尾盘", String(tailFans.length) + " 只",
+      "首板后1~3日 · 缩量≤0.7 · 守MA10 · 回调不低于-8%", tailFans.length ? "up" : "") +
     card("连续阳线量价齐升", String((DATA.vol_rise || []).length) + " 只",
       "连续2~3日阳线 · 低点逐日抬高 · 今日未涨停 · 排除688", (DATA.vol_rise || []).length ? "up" : "") +
     card("近4个交易日有过长下影线", String((DATA.lower_shadow || []).length) + " 只",
@@ -6820,6 +6948,23 @@ function renderMonitor() {
   table("t_rol", rrows, ROLCOLS, { sort: (a, b) => b.high_pct - a.high_pct });
   $("#rolInfo").textContent = "当前显示 " + rrows.length + " 只（共 " + rolls.length +
     " 只 · 今天 " + rolls.filter(r => r.days_ago === 0).length + " 只）";
+
+  // 首板涨停后回调反包：尾盘买入策略
+  let fanRows = fans;
+  if (FB_FILTER === "tail") fanRows = tailFans;
+  else if (FB_FILTER === "strict") fanRows = fans.filter(r =>
+    r.vshrink !== null && r.vshrink <= 0.6 && r.above_ma5 && r.above_ma10 &&
+    r.days_since >= 1 && r.days_since <= 3 && r.low_vs_close >= -8);
+  else if (FB_FILTER === "low") fanRows = fans.filter(r => r.low_pos);
+  else if (FB_FILTER === "sector") fanRows = fans.filter(r => r.sector_zt >= 1);
+  table("t_fanbao", fanRows, FBCOLS, {
+    sort: (a, b) => (b.strict ? 1 : 0) - (a.strict ? 1 : 0) ||
+      (b.low_pos ? 1 : 0) - (a.low_pos ? 1 : 0) ||
+      (b.sector_zt >= 1 ? 1 : 0) - (a.sector_zt >= 1 ? 1 : 0) ||
+      (a.vshrink || 9) - (b.vshrink || 9)
+  });
+  $("#fanInfo").textContent = "当前显示 " + fanRows.length + " 只 · 尾盘标准版 " +
+    tailFans.length + " 只（观察池共 " + fans.length + " 只）";
 
   // 连续 2~3 日阳线、量价齐升、底部抬高，今日未涨停
   const vrs = DATA.vol_rise || [];
@@ -7729,6 +7874,29 @@ $("#tabs").addEventListener("click", e => {
 
 $("#limitMore").addEventListener("click", loadMoreLimitHistory);
 
+$("#limitChart").addEventListener("click", e => {
+  const node = e.target.closest && e.target.closest("[data-symbol]");
+  if (!node) return;
+  const rects = Array.from($("#limitChart").querySelectorAll("rect[data-symbol]"));
+  const names = {}, syms = [];
+  rects.forEach(r => {
+    const sym = r.getAttribute("data-symbol");
+    if (!sym || syms.indexOf(sym) >= 0) return;
+    syms.push(sym);
+    names[sym] = r.getAttribute("data-name") || sym;
+  });
+  const sym = node.getAttribute("data-symbol");
+  NAV = { list: syms, idx: Math.max(0, syms.indexOf(sym)), names: names };
+  openStock(sym, true);
+});
+$("#limitChart").addEventListener("keydown", e => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const node = e.target.closest && e.target.closest("[data-symbol]");
+  if (!node) return;
+  e.preventDefault();
+  node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+});
+
 document.querySelectorAll(".monF").forEach(b => b.addEventListener("click", () => {
   MON_FILTER = b.dataset.mf;
   document.querySelectorAll(".monF").forEach(x => x.classList.toggle("on", x === b));
@@ -7738,6 +7906,12 @@ document.querySelectorAll(".monF").forEach(b => b.addEventListener("click", () =
 document.querySelectorAll(".rolF").forEach(b => b.addEventListener("click", () => {
   ROL_FILTER = b.dataset.rf;
   document.querySelectorAll(".rolF").forEach(x => x.classList.toggle("on", x === b));
+  renderMonitor();
+}));
+
+document.querySelectorAll(".fbF").forEach(b => b.addEventListener("click", () => {
+  FB_FILTER = b.dataset.ff;
+  document.querySelectorAll(".fbF").forEach(x => x.classList.toggle("on", x === b));
   renderMonitor();
 }));
 
@@ -8281,6 +8455,7 @@ $("#exAddBtn").addEventListener("click", async () => {
     symbol: sym, name: v.name || (poolRow && poolRow.name) || c,
     lb: (poolRow && poolRow.lbc) || null, score: null, auc_pct: null,
     kind: (poolRow && poolRow.group === "涨停") ? "昨日涨停" : "",
+    expect: "手动加入：按竞价强弱和封板质量确认",
     hit: hit, stop: hit ? +(hit * 0.95).toFixed(2) : null,
     bk: (poolRow && poolRow.bk) || "", why: "手动加入",
     relay_role: relayRoleMap()[sym] || ""
