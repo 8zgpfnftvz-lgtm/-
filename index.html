@@ -590,6 +590,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
 </style>
 </head>
 <body>
+<script src="arc_right_data.js"></script>
 <div class="wrap">
 
 <header>
@@ -741,19 +742,21 @@ tbody tr:hover td .lnk{text-decoration:underline}
     严格档为缩量≤0.6并站上MA5。次日涨停按连板处理，未涨停则收盘退出；跌破信号日低点或MA10止损。
   </div>
 
-  <h3>④ 连续 2~3 日阳线 · 量价齐升 · 底部抬高（今日未涨停）</h3>
+  <h3>④ 圆弧底右侧启动（替代原「连续阳线·底部抬高」）</h3>
   <div class="bar">
-    <div><div class="k">筛选</div></div>
-    <button type="button" class="vrF on" data-vf="all">全部</button>
-    <button type="button" class="vrF" data-vf="d2">只看连续 2 日</button>
-    <button type="button" class="vrF" data-vf="d3">只看连续 3 日</button>
-    <span class="k" id="vrInfo"></span>
+    <div>
+      <div class="k">全市场形态扫描 · 按圆弧完整度和右侧启动强度排序</div>
+      <div class="k">点击股票可打开现有日K图人工复核</div>
+    </div>
+    <button type="button" id="arcRefresh">刷新形态</button>
+    <span class="k" id="arcInfo">等待加载…</span>
   </div>
-  <div class="panel"><table id="t_vrise"></table></div>
-  <div class="k" style="margin-top:10px">
-    口径：最近连续 <b>2 或 3 根阳线</b>（收盘 &gt; 开盘），这 2~3 天每天
-    <b>收盘价高于前一日收盘</b>、<b>成交量高于前一日成交量</b>，且<b>最低价逐日抬高</b>。
-    今天必须<b>没有涨停</b>；只排除 <b>688</b> 开头。连续到第 4 天就不再列为新信号，避免追高。
+  <div class="panel"><table id="t_arc"></table></div>
+  <div class="k" id="arcFoot" style="margin-top:10px">
+    前期回撤≥20%，60日抛物线圆度R²≥0.55，底部平台≥5日，低点逐步抬高；
+    MA5≥MA10且MA20走平向上；底部均量≤下跌段0.85倍，当日量≥5日均量1.4倍；
+    当日放量并突破平台；收盘站上平台标为“右侧启动”，盘中突破但收盘未站稳标为“待确认”。
+    突破幅度≤8%。ST、停牌、历史不足与连续加速标的自动排除。
   </div>
 
   <h3>⑤ 近4个交易日有过长下影线（下影线≥5% · 最低点跌幅≥5% · 近20日涨停过 · 剔除当日涨停）</h3>
@@ -3340,6 +3343,8 @@ const $ = s => document.querySelector(s);
 const NS = "http://www.w3.org/2000/svg";
 let DATA = null;
 const TABLES = [];
+let ARC_DATA = null;
+let ARC_LOADING = null;
 
 function isTransientNetworkError(msg) {
   return /Script error|Failed to fetch|Load failed|NetworkError|请求超时|网络请求失败|加载失败|接口暂时都不可用|HTTP 5\d\d|empty/i
@@ -6820,6 +6825,93 @@ async function wpQuotes(){
   renderWatch();
 }
 
+/* ---------- 圆弧底右侧启动（独立策略） ---------- */
+const ARCCOLS = [
+  { key: "symbol", label: "代码", left: true },
+  { key: "name", label: "名称", left: true },
+  { key: "close", label: "最新价", num: true, sortable: true, render: r => num(r.close, 2) },
+  { key: "pct", label: "当日涨跌", num: true, sortable: true, cls: r => cls(r.pct), render: r => pct(r.pct, 2) },
+  { key: "drawdown", label: "阶段回撤", num: true, sortable: true, cls: () => "down", render: r => pct(r.drawdown, 1) },
+  { key: "ma_status", label: "均线状态", left: true, render: r =>
+      '<span class="tag ' + (r.ma_status === "多头排列" ? "ok" : r.ma_status === "转强" ? "" : "bad") + '">' +
+      esc(r.ma_status || "—") + '</span><span class="k"> ' + num(r.ma5) + "/" +
+      num(r.ma10) + "/" + num(r.ma20) + "</span>" },
+  { key: "vol_ratio", label: "成交量变化", num: true, sortable: true, render: r =>
+      '<b class="up">' + num(r.vol_ratio, 2) + '×</b><span class="k"> / 底部 ' +
+      num(r.bottom_vol_ratio, 2) + '×</span>' },
+  { key: "breakout", label: "突破平台", left: true, render: r =>
+      (r.stage === "右侧启动"
+        ? '<span class="tag ok">收盘突破 +' + num(r.break_pct, 2) + '%</span>'
+        : '<span class="tag">盘中突破待确认</span>') +
+      '<span class="k"> 最高 +' + num(r.high_break_pct, 2) + '% / 收盘 ' + pct(r.break_pct, 2) + '</span>' +
+      '<span class="k"> 平台 ' + num(r.platform_high, 2) + "</span>" },
+  { key: "arc_score", label: "圆弧底评分", num: true, sortable: true, render: r =>
+      '<span class="tag ' + (r.arc_score >= 75 ? "ok" : r.arc_score >= 60 ? "" : "bad") + '">' +
+      num(r.arc_score, 0) + "/100</span>" },
+  { key: "arc_r2", label: "圆度R²", num: true, sortable: true, render: r => num(r.arc_r2, 2) },
+  { key: "flat_days", label: "底部平台", num: true, sortable: true, render: r => num(r.flat_days, 0) + "日" },
+  { key: "low_step", label: "低点抬高", num: true, sortable: true, cls: () => "up", render: r => pct(r.low_step, 2) },
+  { key: "bk", label: "板块 / 题材", left: true, render: sectorCell },
+];
+
+async function loadArcRight(force) {
+  if (ARC_LOADING && !force) return ARC_LOADING;
+  const embedded = window.__ARC_RIGHT_DATA__;
+  if (embedded && embedded.rows && /^file:/.test(location.protocol)) {
+    ARC_DATA = embedded;
+    renderArcRight();
+    return embedded;
+  }
+  if (embedded && embedded.rows) {
+    ARC_DATA = embedded;
+    renderArcRight();
+  }
+  $("#arcInfo").textContent = "正在加载形态数据…";
+  ARC_LOADING = fetch("arc_right_data.json?v=" + Date.now(), { cache: "no-store" })
+    .then(r => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(data => {
+      ARC_DATA = data;
+      renderArcRight();
+      return data;
+    })
+    .catch(err => {
+      if (ARC_DATA) {
+        $("#arcInfo").textContent = "使用本地内置形态数据 · " + (ARC_DATA.date || "");
+        return ARC_DATA;
+      }
+      $("#arcInfo").textContent = "未找到 arc_right_data.js 数据文件";
+      $("#arcFoot").textContent = "请把 arc_right_data.js 放在本页面同一文件夹，然后刷新。";
+      throw err;
+    })
+    .finally(() => { ARC_LOADING = null; });
+  return ARC_LOADING;
+}
+
+function renderArcRight() {
+  const data = ARC_DATA;
+  if (!data) return;
+  const rows = data.rows || [];
+  const summary = data.summary || {};
+  const hist = summary.insufficient_history || 0;
+  const best = rows.length ? rows[0] : null;
+  const summaryCard = $("#arcSummaryCard");
+  if (summaryCard) {
+    summaryCard.innerHTML =
+      '<div class="k">圆弧底右侧启动</div><b>' + rows.length + ' 只</b>' +
+      '<div class="k">' + (best ? "最高 " + best.arc_score + "/100 · " + esc(best.name) : "暂无命中") +
+      ' · 历史不足 ' + hist + ' 只</div>';
+  }
+  table("t_arc", rows, ARCCOLS, {
+    sort: (a, b) => b.arc_score - a.arc_score || b.break_pct - a.break_pct || a.symbol.localeCompare(b.symbol),
+  });
+  $("#arcInfo").textContent = "扫描 " + (summary.scanned || 0) + " 只 · 命中 " + rows.length + " 只";
+  $("#arcFoot").textContent = "扫描口径：" + (data.scope || "沪深A股") +
+    "；形态识别不是买入保证，点名称或行打开日K复核。";
+}
+
 /* ---------- 监控①：前期启动首板 → 箱体横盘 → 今天首板 ---------- */
 let MON_FILTER = "all";
 let VR_FILTER = "all";
@@ -6950,8 +7042,8 @@ function renderMonitor() {
       "冲高≥6% 回落≥3% · 当日收红柱 · 只主板 · 已剔除 5/10 日线向下", (DATA.rollover || []).length ? "up" : "") +
     card("首板回调·尾盘", String(tailFans.length) + " 只",
       "首板后1~3日 · 缩量≤0.7 · 守MA10 · 回调不低于-8%", tailFans.length ? "up" : "") +
-    card("连续阳线量价齐升", String((DATA.vol_rise || []).length) + " 只",
-      "连续2~3日阳线 · 低点逐日抬高 · 今日未涨停 · 排除688", (DATA.vol_rise || []).length ? "up" : "") +
+    '<div class="card" id="arcSummaryCard"><div class="k">圆弧底右侧启动</div>' +
+      '<b>读取中…</b><div class="k">圆弧完整 + 放量突破平台</div></div>' +
     card("近4个交易日有过长下影线", String((DATA.lower_shadow || []).length) + " 只",
       "长下影≥5% · 最低跌幅≥5% · 近20日涨停过 · 剔除当日涨停",
       (DATA.lower_shadow || []).length ? "up" : "");
@@ -6987,14 +7079,8 @@ function renderMonitor() {
   $("#fanInfo").textContent = "当前显示 " + fanRows.length + " 只 · 尾盘标准版 " +
     tailFans.length + " 只（观察池共 " + fans.length + " 只）";
 
-  // 连续 2~3 日阳线、量价齐升、底部抬高，今日未涨停
-  const vrs = DATA.vol_rise || [];
-  applyMonitorTrendCache(vrs);
-  let vrows = vrs;
-  if (VR_FILTER === "d2") vrows = vrs.filter(r => r.days === 2);
-  else if (VR_FILTER === "d3") vrows = vrs.filter(r => r.days === 3);
-  table("t_vrise", vrows, VRCOLS, { sort: (a, b) => b.days - a.days || b.total_chg - a.total_chg });
-  $("#vrInfo").textContent = "当前显示 " + vrows.length + " 只（共 " + vrs.length + " 只）";
+  // 原「连续阳线·底部抬高」已由「圆弧底右侧启动」替代。
+  loadArcRight(false).catch(() => {});
 
   const shadows = DATA.lower_shadow || [];
   applyMonitorTrendCache(shadows);
@@ -7546,6 +7632,7 @@ function applyData(payload) {
   try { renderTrade(); } catch (e) { /* 交易页异常不影响其它页 */ }
   try { renderPlanReview().catch(() => { }); } catch (e) { }
   try { renderMonitor(); } catch (e) { /* 监控数据缺失时不影响其它页 */ }
+  try { loadArcRight(false).catch(() => { }); } catch (e) { }
   try { renderWatch(); } catch (e) { /* 自选池异常不影响其它页 */ }
   try { if (!$("#tab-auction").hidden) safeLoadAuction(); } catch (e) { }
   try { applyFold(); } catch (e) { /* 折叠状态应用失败不影响其它功能 */ }
@@ -8510,6 +8597,7 @@ document.addEventListener("click", e => {
 });
 
 $("#btnHelp").addEventListener("click", () => { $("#help").hidden = false; });
+$("#arcRefresh").addEventListener("click", () => { loadArcRight(true).catch(() => {}); });
 
 $("#btnExport").addEventListener("click", () => {
   const m = DATA.meta;
