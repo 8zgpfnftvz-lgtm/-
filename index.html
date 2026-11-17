@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180-v2.png">
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32-v2.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192-v2.png">
-<link rel="manifest" href="manifest.webmanifest?v=20261113">
+<link rel="manifest" href="manifest.webmanifest?v=20261117">
 
 <meta name="format-detection" content="telephone=no">
 <title>天天板</title>
@@ -609,7 +609,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
   </div>
   <div class="header-actions">
     <button type="button" id="btnHelp">使用说明</button>
-    <a href="report.md" target="_blank" id="reportLink"><button type="button">完整报告</button></a>
+    <a href="report.md" target="_blank" id="reportLink" hidden><button type="button">完整报告</button></a>
     <button type="button" id="btnExport" hidden>导出报告</button>
     <button type="button" class="primary" id="refresh">重新生成</button>
   </div>
@@ -3387,7 +3387,6 @@ tbody tr:hover td .lnk{text-decoration:underline}
 
 </script>
 
-</script>
 <script>
 const $ = s => document.querySelector(s);
 const NS = "http://www.w3.org/2000/svg";
@@ -7410,7 +7409,9 @@ function findName(symbol) {
     DATA.monitor || [],
     DATA.rollover || [], DATA.vol_rise || [], DATA.lower_shadow || [],
     DATA.setups || [], DATA.fanbao || [],
-    DATA.mode2 || [], DATA.mode2_pending || [], [],
+    DATA.mode2 || [], DATA.mode2_pending || [],
+    (ARC_DATA && ARC_DATA.rows) || [], (ARC_DATA && ARC_DATA.live_rows) || [],
+    (ARC_DATA && ARC_DATA.states) || [], [],
   ];
   for (const list of lists) {
     const hit = (list || []).find(r => r.symbol === symbol);
@@ -7846,7 +7847,10 @@ function markPhone() {
   const b = $("#refresh");
   b.textContent = "更新数据";
   const link = $("#reportLink");
-  if (link) link.style.display = "none";
+  if (link) {
+    link.hidden = true;
+    link.style.display = "none";
+  }
   $("#btnExport").hidden = false;
   const box = $("#prog");
   box.hidden = false;
@@ -7920,8 +7924,14 @@ function markStatic() {
   $("#btnExport").hidden = false;
   const link = $("#reportLink");
   if (link) {
-    if (DATA.meta.report) link.href = DATA.meta.report;
-    else link.style.display = "none";
+    if (DATA.meta.report) {
+      link.href = DATA.meta.report;
+      link.hidden = false;
+      link.style.display = "";
+    } else {
+      link.hidden = true;
+      link.style.display = "none";
+    }
   }
   $("#prog").hidden = false;
   $("#prog .line").innerHTML = "<span>这是静态快照，只能查看。要更新数据：" +
