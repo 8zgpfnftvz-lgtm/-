@@ -5013,6 +5013,40 @@ function trAddTrade(t) {
   trSave(list);
   renderTrade();
 }
+function execPlanVerdict(firstExec, rows, marketGate, cycleState, now) {
+  now = now || new Date();
+  const day = now.getDay();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  if (!firstExec) return { verdict: "观察", reason: "当前没有候选清单" };
+
+  const scorePass = (firstExec.score || 0) >= REC_MIN;
+  const statuses = (rows || []).map(r => tradeAuctionStatus(r));
+  const good = statuses.filter(x => x === "超预期" || x === "符合").length;
+  const bad = statuses.filter(x => x === "不及预期").length;
+  const riskGate = marketGate === "red" || /退潮/.test(cycleState || "");
+
+  // 收盘后到次日9:15是预案阶段，不能用上一交易日收盘闸门直接判次日禁做。
+  if (day === 0 || day === 6 || mins >= 15 * 60 + 5 || mins < 9 * 60 + 15) {
+    if (!scorePass) return { verdict: "只观察", reason: "评分未达到" + REC_MIN + "分门槛" };
+    if (riskGate) return { verdict: "风险预警", reason: "上一交易日市场闸门偏弱，次日须等9:25修复确认" };
+    if (marketGate === "green" && /主升/.test(cycleState || ""))
+      return { verdict: "次日候选", reason: "预案通过，9:25竞价确认后才能执行" };
+    return { verdict: "次日观察", reason: "市场尚未形成绿灯主升共振，9:25再定" };
+  }
+  if (mins < 9 * 60 + 25) {
+    return { verdict: "等待确认", reason: "等待9:25锁定竞价反馈，不提前开仓" };
+  }
+  if (mins <= 9 * 60 + 30) {
+    if (!scorePass) return { verdict: "只观察", reason: "评分未达到" + REC_MIN + "分门槛" };
+    if (bad > good) return { verdict: "禁止执行", reason: "9:25竞价反馈不及预期多于正向反馈" };
+    if (good > 0) return {
+      verdict: "可候选执行",
+      reason: riskGate ? "9:25已有正向反馈，但上一日闸门偏弱，只做最强" : "9:25竞价已有正向反馈，仍需封板质量确认"
+    };
+    return { verdict: "待确认", reason: "9:25没有拿到有效正向反馈" };
+  }
+  return { verdict: "仅供复盘", reason: "已过9:30执行窗口，不再新增打板" };
+}
 function renderTrade() {
   if (!DATA) return;
   const ex = exLoad(), trades = trLoad();
@@ -5037,23 +5071,9 @@ function renderTrade() {
   const firstExec = sortedExec[0] || null;
   const marketGate = (DATA.market && DATA.market.gate) || "yellow";
   const cycleState = (DATA.cycle && DATA.cycle.state) || "";
-  let execVerdict = "观察";
-  let execReason = "还没有候选清单";
-  if (firstExec) {
-    if ((firstExec.score || 0) < REC_MIN) {
-      execVerdict = "禁止执行";
-      execReason = "评分未达到" + REC_MIN + "分门槛";
-    } else if (marketGate === "red" || /退潮/.test(cycleState)) {
-      execVerdict = "禁止执行";
-      execReason = "市场闸门红灯或情绪退潮";
-    } else if (marketGate === "green" && /主升/.test(cycleState)) {
-      execVerdict = "可候选执行";
-      execReason = "市场闸门绿灯，仍需9:25竞价确认";
-    } else {
-      execVerdict = "只观察";
-      execReason = "市场闸门为黄灯，评分第一也不能直接买";
-    }
-  }
+  const execDecision = execPlanVerdict(firstExec, erows, marketGate, cycleState);
+  const execVerdict = execDecision.verdict;
+  const execReason = execDecision.reason;
   const execGate = $("#execGateHint");
   if (execGate) {
     execGate.innerHTML = firstExec
