@@ -635,9 +635,6 @@ tbody tr:hover td .lnk{text-decoration:underline}
 </div>
 <section id="tab-auction" hidden>
   <div class="grid" id="aucCards"></div>
-  <div id="cycleLiveState" class="note" style="margin:8px 0 10px">
-    中位状态：等待盘中数据…
-  </div>
   <div id="relayAuctionHint">
     <div class="relay-auction-card">
       <div class="relay-auction-head"><b>龙头接力 · 计算中</b><span>等待复盘数据</span></div>
@@ -645,7 +642,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
     </div>
   </div>
   <div class="bar">
-    <div><div class="k">竞价锚定判断（按《情绪流》2.3 的七大量化标准）</div></div>
+    <div><div class="k">竞价锚定判断（按《淘股吧六篇龙头节点体系学习手册》的龙头反馈与节点规则）</div></div>
     <span class="k" id="aucMeta"></span>
     <button type="button" id="aucRefresh">立即刷新</button>
     <button type="button" id="aucAuto" class="on">自动刷新 9:25 · 开</button>
@@ -1464,7 +1461,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
      打分口径和「竞价」页一致（板数位置 + 题材家数 + 梯队完整 + 龙头加成），
      只差「竞价强弱」这一项 —— 那要等第二天 9:25 才知道，页面会在竞价页补上。 */
 
-  /* 情绪锚定池（《情绪流》第二章的五个点，上限 10 只）—— 只用来判断"今天情绪怎么样"，
+  /* 情绪锚定池（按《淘股吧六篇龙头节点体系学习手册》，上限 10 只）—— 只用来判断"今天情绪怎么样"，
      和"今天打哪只"分开看：锚定池是温度计，打板预案才是下单清单。 */
   /* 锚定标的 = 「前期高度龙头」今天给出的反馈，不是今天新涨停的票。
      近 15 个交易日出现过 ≥3 板的票入选；按辨识度（最高板）排序，
@@ -1499,7 +1496,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
     return rows.slice(0, 10);
   }
 
-  /* 按《情绪流》2.3 的量化标准给次日预期 */
+  /* 按《淘股吧六篇龙头节点体系学习手册》的龙头反馈给次日预期 */
   function kindOf(p) {
     if (p.yizi) return '一字板';
     var fbt = p.fbt || 0, lbt = p.lbt || fbt;
@@ -1665,8 +1662,9 @@ tbody tr:hover td .lnk{text-decoration:underline}
       Number(cyc.mid3_left || 0) === 0 && Number(cyc.mid4_left || 0) === 0;
     var node2 = zt.filter(function (p) { return Number(p.lbc || 1) === 2 && !p.yizi; })
       .sort(function (a, b) { return (a.fbt || 999999) - (b.fbt || 999999); });
-    var node3 = zt.filter(function (p) { return Number(p.lbc || 1) === 3 && !p.yizi; })
+    var node3 = zt.filter(function (p) { return Number(p.lbc || 1) === 3; })
       .sort(function (a, b) { return (a.fbt || 999999) - (b.fbt || 999999); });
+    var current2 = zt.filter(function (p) { return Number(p.lbc || 1) === 2; });
     var nodeStage = breakAge === null ? '节点位置未知'
       : breakAge <= 1 ? '龙头断板当天'
       : breakAge === 2 ? '断板次日'
@@ -1679,6 +1677,19 @@ tbody tr:hover td .lnk{text-decoration:underline}
     var cycleOwner = anchor ? ('仍处 ' + anchor.name + ' 周期' +
       (breakAge ? '（旧龙头退潮第' + breakAge + '天）' : '（龙头延续中）')) : '无明确周期归属';
     var currentMaxBoard = zt.reduce(function (m, p) { return Math.max(m, Number(p.lbc || 1)); }, 0);
+    var midSummary = cyc.mid_text || (midCleared ? '已出清' : '未出清');
+    if (midCleared) {
+      midSummary = '中位快速出清';
+      if (node3.length === 1) {
+        midSummary += ' · 今日2进3唯一：' + node3[0].name + (node3[0].yizi ? '（一字）' : '');
+      } else if (node3.length > 1) {
+        midSummary += ' · 今日2进3：' + node3.map(function (p) { return p.name; }).join('、') + '，同梯队仍PK';
+      } else if (current2.length) {
+        midSummary += ' · 今日2板' + current2.length + '只，等待2进3';
+      } else {
+        midSummary += ' · 今日暂无新的2进3身位';
+      }
+    }
     var newCycleState = cyc.dragon_active ? '原龙头仍在延续，周期尚未切换'
       : (!midCleared ? '旧周期中位未出清，不能切换新周期'
         : (currentMaxBoard > anchorLb ? '已有股票超过原龙头高度，需要确认换龙承接'
@@ -1701,8 +1712,10 @@ tbody tr:hover td .lnk{text-decoration:underline}
       nodeLayer = 3;
       nodePreferred = node2[0] || null;
     } else if (node3.length === 1) {
-      nodeTitle = '中位出清，同梯队三板唯一';
-      nodeAction = '次日执行3进4确认；必须看竞价、承接和弱转强，不能只凭唯一性无条件买。';
+      nodeTitle = '中位快速出清，2进3唯一：' + node3[0].name + (node3[0].yizi ? '（一字）' : '');
+      nodeAction = node3[0].yizi
+        ? '今天2进3已经完成，但唯一三板是一字，缺少换手；次日3进4不排一字，只看开板承接、放量回封和弱转强。'
+        : '次日执行3进4确认；必须看竞价、承接和弱转强，不能只凭唯一性无条件买。';
       nodeLayer = 4;
       nodePreferred = node3[0];
     } else if (node3.length > 1) {
@@ -1724,7 +1737,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
     L.push('- 锚定龙头：' + (anchor ? anchor.name + '（' + anchor.lb + '板）' : '无'));
     L.push('- 当前周期归属：**' + cycleOwner + '**');
     L.push('- 新周期状态：' + newCycleState);
-    L.push('- 中位状态：' + (cyc.mid_text || (midCleared ? '已出清' : '未出清')));
+    L.push('- 中位状态：' + midSummary);
     L.push('- 执行结论：**' + nodeTitle + '**。' + nodeAction);
     L.push('');
     if (nodePreferred) {
@@ -3375,7 +3388,8 @@ tbody tr:hover td .lnk{text-decoration:underline}
           opinion: window.__PHONE_OPINION__.make({
             date: ctx.dt, emotion: emotion, ladder: ladder, pool: anchor.pool,
             leaders: anchor.leaders,
-            mode2: m2.mode2, pending: m2.pending, market: market, phase: phase
+            mode2: m2.mode2, pending: m2.pending, market: market, phase: phase,
+            cycle: cycle
           })
         };
         ctx.data = data;
@@ -3820,7 +3834,7 @@ function card(k, v, sub, kls) {
 }
 
 /* ---------- 竞价模式 ---------- */
-// 按《情绪流》2.3 的七大量化标准，把"昨天是什么票"映射成"今天开盘多少算符合/超预期"
+// 按《淘股吧六篇龙头节点体系学习手册》，把"昨天是什么票"映射成"今天开盘反馈"
 const AUC_RULES = {
   "秒板":   { lo: 5,  sup: 7,  label: "9:35前秒板（未炸）", desc: "符合 5%~7%，7% 以上超预期" },
   "上午板": { lo: 3,  sup: 5,  label: "上午涨停",           desc: "符合 3%~5%，5% 以上超预期" },
@@ -4347,7 +4361,7 @@ function aucBan(r) {
 }
 
 /* 情绪锚定：只看前期高度龙头（DATA.anchor.leaders）今天的竞价反馈。
-   判定标准沿用《情绪流》2.3 的八条量化预期（AUC_RULES）。 */
+   判定标准以龙头反馈、断板路径和节点身位为准（AUC_RULES 仅保留可执行阈值）。 */
 /* 情绪锚定池：系统自动维护高板/趋势龙头，同时允许手动补充和删除 */
 const AUC_LIST_KEY = "aucAnchorList", AUC_SNAP_KEY = "aucAnchorSnap";
 const AUC_AUTO_HIDE_KEY = "aucAnchorAutoHidden";
@@ -4439,7 +4453,7 @@ function buildAucAnchors(pool, quotes, list) {
         lv = aucJudge(kind, gap);
       }
     } else {
-      /* 未涨停（今天不在涨停/断板/大面池）：按《情绪流》标准七/八 + 回调修复判断 */
+      /* 未涨停（今天不在涨停/断板/大面池）：按六篇手册的龙头反馈与回调修复判断 */
       var hot = (L.chg10 !== undefined && L.chg10 !== null && L.chg10 >= 90);
       rule = "回调中：高开 ≥0% 超预期 / -3%~0 符合 / <-3% 不及预期" +
         (hot ? "；异动监管（10日 +" + L.chg10.toFixed(0) + "%，不被核即符合）" : "");
@@ -4595,18 +4609,18 @@ async function loadAuction() {
   const clock = aucClockText();
   const cyc = DATA && DATA.cycle ? DATA.cycle : {};
   const risk = auctionRiskHint(quotes, dec);
+  const midSummary = cycleMidSummary();
   cardBox.innerHTML =
     card("情绪锚定判定", dec.verdict, "锚定池 " + ANC.length + " 只；今日反馈 " + dec.total +
       " 只：超预期 " + dec.sup + " / 符合 " + dec.ok + " / 不及预期 " + dec.bad +
       "；加权情绪分 " + (dec.score === null ? "-" : dec.score.toFixed(2)), dec.cls) +
     card("可操作性", dec.action,
       dec.locked ? "依据已锁定的9:25竞价反馈" : "尚未锁定9:25，只显示预判，不执行", dec.cls) +
-    card("周期节点 / 仓位",
-      (cyc.state || "混沌") + (cyc.substate ? " · " + cyc.substate : ""),
-      (cyc.position || "等待数据") + (cyc.note ? " · " + cyc.note : "") +
-      (cyc.mid_text && (cyc.note || "").indexOf(cyc.mid_text) < 0 ? " · " + cyc.mid_text : "") +
-      (cyc.excluded_one_word ? " · 已排除连续一字高标" + cyc.excluded_one_word + "只" : ""),
-      cyc.state && /主升/.test(cyc.state) ? "up" : (/退潮|冰点/.test(cyc.state) ? "down" : "")) +
+    '<div class="card" id="aucCycleCard"><div class="k">周期节点 / 仓位</div>' +
+      '<div class="v ' + (cyc.state && /主升/.test(cyc.state) ? "up" :
+        (/退潮|冰点/.test(cyc.state) ? "down" : "")) + '">' +
+        esc((cyc.state || "混沌") + (cyc.substate ? " · " + cyc.substate : "")) + '</div>' +
+      '<div class="k" id="aucCycleSub">' + cycleCardSub(midSummary) + '</div></div>' +
     card("9:24:50 持仓风控", risk.title, risk.text, risk.cls) +
     card("行情时间", tTxt, clock +
       (clock === "非交易时段" ? " · 这不是竞价数据，判断仅供参考，请在 9:15–9:25 使用本页" : ""));
@@ -4633,7 +4647,7 @@ async function loadAuction() {
     "自动主池：近期出现 <b>6板及以上</b> 的高位龙头，以及 <b>4板以上断板后仍在5/10/20日线上方趋势上行</b> 的标的；从阶段高点回撤超过 <b>30%</b> 自动剔除并补位，最多10只。<b>只有连续一字顶到6板以上的高标不纳入情绪判断，低位一字正常保留</b>。也可以输入代码手动补充，行末「删」当天移除。" +
     "情绪判定只用 <b>9:25</b> 那一刻的竞价数据（抓到后锁定，盘中不再变）。" +
     "超预期过半→情绪超预期；不及预期过半→情绪不及预期；其余→符合预期。" +
-    "<b>未涨停</b>的按《情绪流》标准七/八判：高开 ≥0% 算超预期（弱转强/不被核）、-3%~0 符合、<-3% 不及预期；" +
+    "<b>未涨停</b>按六篇手册的龙头反馈判断：高开 ≥0% 算超预期（弱转强/不被核）、-3%~0 符合、<-3% 不及预期；" +
     "10 日涨幅 ≥90% 的会标注异动监管。" +
     "</div>";
   groups.forEach((g, i) => {
@@ -4781,40 +4795,92 @@ function auctionRiskHint(quotes, dec) {
   };
 }
 
+function cyclePoolRows(items) {
+  const E = window.__PHONE_ENGINE__;
+  const src = items || ((DATA && DATA.anchor && DATA.anchor.pool) || []);
+  return (src || []).filter(x => !x.group || x.group === "涨停").map(x => ({
+    symbol: x.symbol || (E && x.c !== undefined ? E.symOf(x.c, x.m) : ""),
+    name: x.name || x.n || "未命名",
+    lb: Number(x.lbc || x.lb || ((x.zttj && x.zttj.ct) || 1)),
+    yizi: !!x.yizi
+  })).filter(x => x.symbol);
+}
+
+function cycleMidSummary(items) {
+  const cyc = (DATA && DATA.cycle) || {};
+  const rows = cyclePoolRows(items);
+  const members = cyc.mid_members || [];
+  const nowBySym = {};
+  rows.forEach(x => { nowBySym[x.symbol] = x; });
+  const alive = members.filter(x => nowBySym[x.symbol]);
+  const current3 = rows.filter(x => x.lb === 3);
+  const current2 = rows.filter(x => x.lb === 2);
+  const names = xs => xs.slice(0, 4).map(x => x.name).join("、") +
+    (xs.length > 4 ? "等" + xs.length + "只" : "");
+  const out = [];
+
+  if (members.length) {
+    if (!alive.length) {
+      out.push("中位快速出清");
+    } else {
+      const alive3 = alive.filter(x => Number(x.lb || 0) === 3).length;
+      const alive4 = alive.filter(x => Number(x.lb || 0) === 4).length;
+      out.push("中位未出清（三板仍封" + alive3 + "只、四板仍封" + alive4 + "只）");
+    }
+  } else {
+    out.push("本轮历史中位无样本");
+  }
+
+  if (current3.length === 1) {
+    out.push("今日2进3唯一：" + current3[0].name +
+      (current3[0].yizi ? "（一字）" : ""));
+  } else if (current3.length > 1) {
+    out.push("今日2进3：" + names(current3) + "，同梯队仍PK");
+  } else if (current2.length) {
+    out.push("今日2板" + current2.length + "只：" + names(current2) + "，等待2进3");
+  } else {
+    out.push("今日暂无新的2进3身位");
+  }
+  return out.join(" · ");
+}
+
+function cycleCardSub(summary) {
+  const cyc = (DATA && DATA.cycle) || {};
+  const parts = [];
+  if (cyc.position) parts.push(esc(cyc.position));
+  if (summary) parts.push('<b style="color:var(--fg)">节点状态：' + esc(summary) + '</b>');
+  if (cyc.excluded_one_word) parts.push(esc("已排除连续一字高标" + cyc.excluded_one_word + "只"));
+  return parts.join(" · ");
+}
+
 let CYCLE_LIVE_BUSY = false;
 let CYCLE_LIVE_LAST = "";
 function renderCycleLive(text, tone) {
   const cls = tone === "ok" ? "up" : tone === "bad" ? "down" : "";
-  const html = '<b class="' + cls + '">中位实时：</b>' + text;
-  const box = $("#cycleLiveState");
-  if (box) box.innerHTML = html;
+  const reviewText = '<b class="' + cls + '">' + esc(text) + '</b>';
+  const auctionSub = $("#aucCycleSub");
+  if (auctionSub) auctionSub.innerHTML = cycleCardSub(text);
   const review = $("#reviewMidClear");
-  if (review && DATA && DATA.cycle) {
-    const base = DATA.cycle.mid_text || "";
-    const plain = String(text || "").replace(/<[^>]+>/g, "");
-    review.innerHTML = plain && plain.indexOf(base) >= 0
-      ? text
-      : esc(base) + (text ? '<br><span class="k">' + text + '</span>' : "");
-  }
+  if (review) review.innerHTML = reviewText;
 }
 async function refreshCycleLive() {
   if (CYCLE_LIVE_BUSY || !DATA || !DATA.cycle || !window.__PHONE_ENGINE__) return;
   const now = new Date(), hhmm = now.getHours() * 100 + now.getMinutes();
   const day = now.getDay();
   if (day === 0 || day === 6) {
-    renderCycleLive(esc(DATA.cycle.live_mid_text || DATA.cycle.mid_text || "暂无数据"), "");
+    renderCycleLive(cycleMidSummary(), "");
     return;
   }
   if (DATA.meta.date !== snapToday()) {
-    renderCycleLive("页面数据基准日为 " + esc(DATA.meta.date) + "，当前交易日尚未完整更新", "bad");
+    renderCycleLive("页面数据基准日为 " + DATA.meta.date + "，当前交易日尚未完整更新", "bad");
     return;
   }
   if (hhmm < 925) {
-    renderCycleLive("9:25后开始更新盘中封板状态；当前为收盘快照", "");
+    renderCycleLive(cycleMidSummary() + " · 9:25后更新盘中封板状态", "");
     return;
   }
   if (hhmm > 1505) {
-    renderCycleLive(esc(DATA.cycle.live_mid_text || DATA.cycle.mid_text || "暂无数据") + "（收盘定稿）", "ok");
+    renderCycleLive(cycleMidSummary() + "（收盘定稿）", "ok");
     return;
   }
   CYCLE_LIVE_BUSY = true;
@@ -4827,25 +4893,14 @@ async function refreshCycleLive() {
       renderCycleLive("等待完整数据更新后计算中位股", "");
       return;
     }
-    const groups = { 3: { total: 0, sealed: 0 }, 4: { total: 0, sealed: 0 } };
-    members.forEach(m => {
-      if (!groups[m.lb]) return;
-      groups[m.lb].total++;
-      if (sealed.has(m.symbol)) groups[m.lb].sealed++;
-    });
-    const seg = [3, 4].map(lb => {
-      const g = groups[lb];
-      if (!g.total) return lb + "板无样本";
-      const open = g.total - g.sealed;
-      return lb + "板仍封" + g.sealed + "/" + g.total + (open ? "，盘中未封" + open + "只" : "");
-    }).join(" · ");
-    const text = now.toLocaleTimeString("zh-CN", { hour12: false }).slice(0, 5) +
-      " · " + seg + " · 未收盘不最终确认出清";
+    const text = cycleMidSummary(zt) + " · " +
+      now.toLocaleTimeString("zh-CN", { hour12: false }).slice(0, 5) + "实时 · 未收盘不最终确认";
     DATA.cycle.live_mid_text = text;
     CYCLE_LIVE_LAST = text;
-    renderCycleLive(esc(text), groups[3].sealed + groups[4].sealed ? "" : "ok");
+    renderCycleLive(text, members.some(m => sealed.has(m.symbol)) ? "" : "ok");
   } catch (e) {
-    renderCycleLive("盘中状态更新失败，保留" + (CYCLE_LIVE_LAST ? "上次 " + esc(CYCLE_LIVE_LAST) : "收盘快照"), "bad");
+    renderCycleLive("盘中状态更新失败，保留" +
+      (CYCLE_LIVE_LAST ? "上次 " + CYCLE_LIVE_LAST : cycleMidSummary()), "bad");
   } finally {
     CYCLE_LIVE_BUSY = false;
   }
@@ -5424,7 +5479,7 @@ function renderOverview() {
     .slice(0, 2)
     .forEach((r, i) => { r.i2_global_rank = i + 1; });
   $("#firstBox").innerHTML = "<h2>首板（当日 " + first.length + " 只，单独归类）</h2>" +
-    "<div class='k'>按《情绪流》口径，模式一只做二板及以上；一进二质量检查已合并到本表。次日竞价高开2%~5%、二板量能和9:45前首封仍需次日确认。</div>" +
+    "<div class='k'>按《淘股吧六篇龙头节点体系学习手册》，模式一只做二板及以上；一进二质量检查已合并到本表。次日竞价反馈、换手承接和首封时间仍需确认。</div>" +
     "<div class='panel'><table id='t_first'></table></div>";
   table("t_first", firstRows, ZTCOLS.concat([
     { key: "sector_first_rank", label: "板块首封排名", num: true, sortable: true, render: r => "#" + r.sector_first_rank },
@@ -5514,7 +5569,7 @@ function renderReviewDashboard() {
     '<div class="review-cycle-row"><span>断板天数</span><b>' +
       (cyc.break_age === null || cyc.break_age === undefined ? "-" : cyc.break_age + "日") + '</b></div>' +
     '<div class="review-cycle-row"><span>中位出清</span><b id="reviewMidClear">' +
-      esc(cyc.mid_text || "-") + '</b></div>' +
+      esc(cycleMidSummary()) + '</b></div>' +
     '<div class="review-cycle-row"><span>一字高标排除</span><b>' + int(cyc.excluded_one_word || 0) + '只</b></div>';
   let execTone = "warn", execTitle = "等待9:25复核", execText = "当前只有收盘预案，不能直接开仓；9:25根据情绪锚定池强弱决定。";
   if (gate === "red" || /退潮/.test(cyc.state || "")) {
@@ -5900,13 +5955,26 @@ function leaderRelayView() {
   }
 
   const prevRows = dayRows(prev);
-  const prevMax = prevRows.length ? prevRows[0].lb : 0;
-  const oldRows = prevRows.filter(x => x.lb === prevMax && x.lb >= 3);
+  const prevBoardMax = prevRows.length ? prevRows[0].lb : 0;
   const zt = ((DATA.anchor && DATA.anchor.pool) || []).filter(x => x.group === "涨停");
   const poolMap = {};
   ((DATA.anchor && DATA.anchor.pool) || []).forEach(x => { poolMap[x.symbol] = x; });
   const ztMap = {};
   zt.forEach(x => { ztMap[x.symbol] = x; });
+  const cycle = DATA.cycle || {};
+  const cycleDragon = cycle.dragon || null;
+  const cycleDragonMeta = cycleDragon
+    ? ((DATA.anchor && DATA.anchor.leaders) || []).find(x => x.symbol === cycleDragon.symbol)
+    : null;
+  const prevMax = Math.max(prevBoardMax, Number(cycleDragon && cycleDragon.lb || 0));
+  const oldRows = cycleDragon && Number(cycleDragon.lb || 0) >= 5
+    ? [{
+        symbol: cycleDragon.symbol,
+        name: cycleDragon.name,
+        bk: (cycleDragonMeta && cycleDragonMeta.bk) || "",
+        lb: Number(cycleDragon.lb)
+      }]
+    : prevRows.filter(x => x.lb === prevBoardMax && x.lb >= 3);
   const oldFeedback = oldRows.map(x => {
     const cur = poolMap[x.symbol];
     const held = !!ztMap[x.symbol];
@@ -5920,7 +5988,13 @@ function leaderRelayView() {
     };
   });
   const oldBroken = oldFeedback.some(x => !x.held);
-  const prevMidRows = prevRows.filter(x => x.lb >= 3);
+  const cycleMids = (cycle.mid_members || []).filter(x => Number(x.lb || 0) === 3 || Number(x.lb || 0) === 4);
+  const prevMidRows = cycleMids.length
+    ? cycleMids.map(x => ({
+        symbol: x.symbol, name: x.name, lb: Number(x.lb || 0),
+        last_limit_date: x.last_limit_date, mid_cleared: !!x.mid_cleared
+      }))
+    : prevRows.filter(x => x.lb >= 3);
   const midAlive = prevMidRows.filter(x => !!ztMap[x.symbol]);
   const midCleared = prevMidRows.length > 0 && midAlive.length === 0;
   const marketNode = prevMax >= 5 && oldBroken;
@@ -5978,6 +6052,12 @@ function leaderRelayView() {
     node = {
       cls: "wait", title: "5板及以上首阴·中位未完全出清",
       text: "旧高度龙已断板，但前一日3板以上中位仍有" + midAlive.length + "只涨停；节点未完成，谨慎接力。"
+    };
+  } else if (zt.filter(x => Number(x.lbc || 1) === 3).length === 1) {
+    const onlyThree = zt.find(x => Number(x.lbc || 1) === 3);
+    node = {
+      cls: "done", title: "中位快速出清·2进3唯一",
+      text: "今日唯一3板是" + onlyThree.name + "，2进3已经完成；下一步只观察它能否通过3进4确认，不把唯一性当成无条件买入理由。"
     };
   } else if (candidates.length) {
     node = {
@@ -6144,19 +6224,21 @@ function promotionNodeHint(from) {
 }
 function threeMostText(view) {
   if (!view) return "";
+  const zt = ((DATA.anchor && DATA.anchor.pool) || []).filter(x => x.group === "涨停");
   const themeCount = {};
-  ((DATA.anchor && DATA.anchor.pool) || []).filter(x => x.group === "涨停").forEach(x => {
+  zt.forEach(x => {
     const k = String(marketThemeOf(x) || x.bk || "其他").trim() || "其他";
     themeCount[k] = (themeCount[k] || 0) + 1;
   });
-  const theme = Object.keys(themeCount).sort((a, b) => themeCount[b] - themeCount[a])[0] || "无";
+  const theme = (view.preferred && view.preferred.theme) || "无";
   const position = view.preferred
     ? view.preferred.name + "·" + view.preferred.lb + "板" +
       (view.candidates.length === 1 ? "·唯一" : "·仍有PK")
     : "无候选";
   const feedback = (view.candidates || []).slice().sort((a, b) =>
     (a.fbt || 999999) - (b.fbt || 999999))[0];
-  return "三最证据：题材 " + theme + "(" + (themeCount[theme] || 0) + "只) · 身位 " +
+  return "三最核验：题材 " + theme + "(" + (themeCount[theme] || 0) + "只" +
+    ((themeCount[theme] || 0) >= 3 ? "，已扩散" : "，扩散不足") + ") · 身位 " +
     position + " · 反馈 " + (feedback ? feedback.name + "首封" + hhmm(feedback.fbt) : "暂无");
 }
 
@@ -6204,8 +6286,7 @@ function nodeExecutionView() {
     : breakAge === 2 ? "断板次日2板"
     : breakAge === 3 ? "断板第3日2板"
     : "断板第4日及以后的新周期2板";
-  const midText = cyc.mid_text || ("三板" + (mid3Left ? "剩" + mid3Left + "只" : "无样本或已出清") +
-    " · 四板" + (mid4Left ? "剩" + mid4Left + "只" : "无样本或已出清"));
+  const midText = cycleMidSummary();
   let tone = "wait", title = "节点条件未满足", action = "先观察，不启动首阴接力。";
   let candidates = [];
   let nodeLayer = 0;
@@ -6232,10 +6313,12 @@ function nodeExecutionView() {
     action = "第4天及以后出现的2板属于新周期节点票；明天的执行层级是2进3，不直接追老周期3板、4板。";
     candidates = two.filter(x => !x.yizi).slice(0, 6);
     nodeLayer = 3;
-  } else if (three.length === 1 && !three[0].yizi) {
+  } else if (three.length === 1) {
     tone = "done";
-    title = "中位出清 · 同梯队三板唯一";
-    action = "明天的高确定性确认层级是3进4；必须先看竞价、承接和能否弱转强，不能仅凭唯一性直接无条件买。";
+    title = "中位快速出清 · 2进3唯一：" + three[0].name + (three[0].yizi ? "（一字）" : "");
+    action = three[0].yizi
+      ? "今天2进3已经完成，但唯一三板是一字，缺少换手。明天3进4不排一字，只看开板后的承接、放量回封和弱转强；没有换手确认就放弃。"
+      : "今天2进3已经完成；下一步的确认层级是3进4，必须看竞价、承接和能否弱转强，不能仅凭唯一性直接无条件买。";
     candidates = three;
     nodeLayer = 4;
   } else if (three.length > 1) {
@@ -6297,9 +6380,7 @@ function nodeExecutionHtml() {
       esc(view.phase) + ' · ' + esc(view.cohortText) + '</span></div>' +
     '<div class="node-exec-action">' + esc(view.action) + '</div>' +
     '<div class="node-exec-meta">' + anchorText + ' · ' + esc(view.midText) +
-      ' · ' + (view.midCleared ? "中位已出清" : "中位未出清") +
       (view.anchorTheme ? ' · 锚定题材：' + esc(view.anchorTheme) : '') + '</div>' +
-    '<div class="node-exec-meta">断板路径：' + esc(view.breakPath) + '</div>' +
     '<div class="node-exec-meta">' + esc(threeMostText(view)) + '</div>' +
     preferred +
     '<div class="node-exec-names">' + tags + '</div>' +
@@ -6318,17 +6399,43 @@ function renderLeaderRelay() {
   const view = leaderRelayView();
   const cross = leaderCrossView();
   if (!view) {
-    badge.textContent = "暂无数据";
-    badge.className = "review-badge";
-    chain.innerHTML = "";
-    conclusion.className = "relay-conclusion muted";
-    conclusion.textContent = "连板历史不足，暂时无法判断接力链。";
-    table("t_relay_candidates", [], [{ key: "name", label: "个股", left: true }]);
-    if (hint) hint.innerHTML =
-      '<div class="relay-auction-card"><div class="relay-auction-head">' +
-      '<b>龙头接力 · 暂无数据</b><span>连板历史不足</span></div>' +
-      '<div class="relay-auction-note">需要当日复盘中的连板历史才能判断5板及以上首阴节点；先完成一次数据更新。</div></div>' +
-      nodeExecutionHtml();
+    const exec = nodeExecutionView();
+    if (!exec) {
+      badge.textContent = "暂无数据";
+      badge.className = "review-badge";
+      chain.innerHTML = "";
+      conclusion.className = "relay-conclusion muted";
+      conclusion.textContent = "节点数据不足，暂时无法判断接力链。";
+      table("t_relay_candidates", [], [{ key: "name", label: "个股", left: true }]);
+      if (hint) hint.innerHTML = nodeExecutionHtml();
+      return;
+    }
+    badge.textContent = exec.title;
+    badge.className = "review-badge " + (exec.tone === "done" ? "green" : exec.tone === "bad" ? "red" : "");
+    chain.innerHTML =
+      '<div class="relay-step done"><span>01 · 锚定龙头</span><b>' +
+        esc(exec.anchor ? exec.anchor.name + " " + exec.anchor.lb + "板" : "无有效龙头") +
+        '</b><small>' + esc(exec.cycleOwner) + '</small></div>' +
+      '<div class="relay-step ' + (exec.midCleared ? "done" : "wait") +
+        '"><span>02 · 中位出清</span><b>' + esc(exec.midText) + '</b><small>' +
+        (exec.midCleared ? "中位风险已完成释放" : "仍需观察中位风险释放") + '</small></div>' +
+      '<div class="relay-step ' + (exec.preferred ? "done" : "muted") +
+        '"><span>03 · 当前身位</span><b>' +
+        esc(exec.preferred ? exec.preferred.name + " " + exec.preferred.lb + "板" : "暂无候选") +
+        '</b><small>' + esc(exec.cohortText) + '</small></div>' +
+      '<div class="relay-step ' + esc(exec.tone) + '"><span>04 · 下一步确认</span><b>' +
+        esc(exec.title) + '</b><small>' + esc(exec.action) + '</small></div>';
+    conclusion.className = "relay-conclusion " + exec.tone;
+    conclusion.innerHTML = '<b>' + esc(exec.title) + '</b><br>' + esc(exec.action);
+    table("t_relay_candidates", exec.candidates.map((x, i) => Object.assign({ rank: i + 1 }, x)), [
+      { key: "rank", label: "顺序", num: true },
+      { key: "name", label: "标的", left: true },
+      { key: "lb", label: "当前板数", num: true, render: r => r.lb + "板" },
+      { key: "theme", label: "题材", left: true },
+      { key: "path", label: "内外切", left: true },
+      { key: "fbt", label: "首封", num: true, render: r => hhmm(r.fbt) },
+    ], { sort: (a, b) => a.rank - b.rank });
+    if (hint) hint.innerHTML = nodeExecutionHtml();
     return;
   }
   badge.textContent = view.node.title;
@@ -7847,6 +7954,7 @@ function drawStock() {
 
 const INLINE = !!window.__DATA__;      // 静态快照模式（直接双击 html 打开）
 const PHONE = !!window.__PHONE_BUILD__; // 手机直连模式（自己抓数、自己算）
+const DATA_CACHE_VERSION = "2026-11-17-node-2";
 
 function showProg(text) {
   const box = $("#prog");
@@ -7885,7 +7993,7 @@ function applyData(payload) {
   DATA = payload;
   const m = DATA.meta;
   // 存一份到本机，断网时也能打开看上次的数据
-  const cacheRecord = { key: "lastData", t: Date.now(), d: payload };
+  const cacheRecord = { key: "lastData", t: Date.now(), version: DATA_CACHE_VERSION, d: payload };
   try { window.__PHONE_ENGINE__.cachePutMany([cacheRecord]).catch(() => {}); } catch (e) { }
   try {
     localStorage.setItem("lastData", JSON.stringify(cacheRecord));
@@ -7981,13 +8089,14 @@ async function load() {
 async function readCache() {
   try {
     const rec = await window.__PHONE_ENGINE__.cacheGet("lastData");
-    if (rec && rec.d && rec.d.meta) return { t: rec.t || 0, d: rec.d };
+    if (rec && rec.version === DATA_CACHE_VERSION && rec.d && rec.d.meta)
+      return { t: rec.t || 0, d: rec.d };
   } catch (e) { }
   try {
     const raw = localStorage.getItem("lastData");
     if (!raw) return null;
     const o = JSON.parse(raw);
-    return (o && o.d && o.d.meta) ? o : null;
+    return (o && o.version === DATA_CACHE_VERSION && o.d && o.d.meta) ? o : null;
   } catch (e) { return null; }
 }
 
