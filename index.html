@@ -635,6 +635,9 @@ tbody tr:hover td .lnk{text-decoration:underline}
 </div>
 <section id="tab-auction" hidden>
   <div class="grid" id="aucCards"></div>
+  <div id="cycleLiveState" class="note" style="margin:8px 0 10px">
+    中位状态：等待盘中数据…
+  </div>
   <div id="relayAuctionHint">
     <div class="relay-auction-card">
       <div class="relay-auction-head"><b>龙头接力 · 计算中</b><span>等待复盘数据</span></div>
@@ -669,13 +672,15 @@ tbody tr:hover td .lnk{text-decoration:underline}
 </section>
 
 <section id="tab-m1" hidden>
-  <h2>模式一：打板（只做二板及以上）</h2>
+  <h2>模式一：打板（只做二板及以上） <span class="tag">收盘快照</span></h2>
+  <div class="k" style="margin:-4px 0 10px">本页使用最近一次完整更新；次日9:25竞价强弱和最终首选请在「竞价」页确认。</div>
   <div class="grid" id="m1stats"></div>
   <div id="m1body"></div>
 </section>
 
 <section id="tab-m2" hidden>
-  <h2>3板及以上 → 回调 / 横盘后是否止跌企稳</h2>
+  <h2>3板及以上 → 回调 / 横盘后是否止跌企稳 <span class="tag">日K快照</span></h2>
+  <div class="k" style="margin:-4px 0 10px">需要完整日K计算，盘中不会逐笔重算；刷新数据后更新。</div>
   <div id="m2banner"></div>
   <div class="grid" id="m2stats"></div>
   <div class="bar">
@@ -690,6 +695,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
 
 <section id="tab-monitor" hidden>
   <div class="grid" id="monCards"></div>
+  <div class="k">监控内的技术形态按最近一次完整数据更新；圆弧底读取独立日K扫描结果，不是逐笔实时。</div>
   <h3>① 已触发 · 前期启动首板 → 箱体横盘 → 今天首板</h3>
   <div class="bar">
     <div><div class="k">筛选</div></div>
@@ -742,20 +748,22 @@ tbody tr:hover td .lnk{text-decoration:underline}
     严格档为缩量≤0.6并站上MA5。次日涨停按连板处理，未涨停则收盘退出；跌破信号日低点或MA10止损。
   </div>
 
-  <h3>④ 圆弧底右侧启动（替代原「连续阳线·底部抬高」）</h3>
+  <h3>④ 圆弧底右侧启动（替代原「连续阳线·底部抬高」） <span class="tag">日K扫描</span></h3>
   <div class="bar">
     <div>
       <div class="k">全市场形态扫描 · 按圆弧完整度和右侧启动强度排序</div>
       <div class="k">点击股票可打开现有日K图人工复核</div>
     </div>
     <button type="button" id="arcRefresh">刷新形态</button>
+    <button type="button" id="arcLiveRefresh">立即实时筛选</button>
     <span class="k" id="arcInfo">等待加载…</span>
   </div>
   <div class="panel"><table id="t_arc"></table></div>
   <div class="k" id="arcFoot" style="margin-top:10px">
     前期回撤≥20%，60日抛物线圆度R²≥0.55，底部平台≥5日，低点逐步抬高；
     MA5≥MA10且MA20走平向上；底部均量≤下跌段0.85倍，当日量≥5日均量1.4倍；
-    当日放量并突破平台；收盘站上平台标为“右侧启动”，盘中突破但收盘未站稳标为“待确认”。
+    交易日14:50自动用当时价格和累计成交量做右侧突破确认；收盘站上平台标为“右侧启动”，
+    盘中突破但尚未站上平台标为“待确认”。
     突破幅度≤8%。ST、停牌、历史不足与连续加速标的自动排除。
   </div>
 
@@ -798,6 +806,9 @@ tbody tr:hover td .lnk{text-decoration:underline}
   <div class="grid" id="trCards"></div>
 
   <h3>① 今日打板执行清单</h3>
+  <div id="execGateHint" class="note" style="margin:0 0 10px">
+    评分第一名只代表候选排序，不等于一定可以买；还要同时满足市场闸门和9:25竞价确认。
+  </div>
   <div class="bar">
     <div><div class="k">清单来自竞价推荐，也可以手动加入</div></div>
     <input type="search" id="exAddInput" placeholder="6位代码，如 600519">
@@ -2228,21 +2239,59 @@ tbody tr:hover td .lnk{text-decoration:underline}
     var leaders = Object.keys(lmap || {}).map(function (k) { return lmap[k]; });
     leaders.sort(function (a, b) { return (b.lb || 0) - (a.lb || 0) ||
       String(b.date || '').localeCompare(String(a.date || '')); });
-    var dragons = leaders.filter(function (L) {
-      return L.lb >= 5 && !L.news_one_word &&
-        (L.drawdown === null || L.drawdown === undefined || L.drawdown >= -30);
-    });
-    var dragon = dragons.length ? dragons[0] : null;
     var todayZt = ((pools[dt] || {}).zt || []);
     var active = {};
     todayZt.forEach(function (x) { active[E.symOf(x.c, x.m)] = x.lbc || 1; });
     leaders.forEach(function (L) { L.today_zt = active[L.symbol] || 0; });
+    var dragons = leaders.filter(function (L) {
+      return L.lb >= 5 && !L.news_one_word;
+    });
+    var recentDragons = dragons.filter(function (L) {
+      return L.days_since !== null && L.days_since !== undefined && L.days_since <= 10;
+    });
+    if (recentDragons.length) dragons = recentDragons;
+    dragons.sort(function (a, b) {
+      var aa = active[a.symbol] >= 5, ba = active[b.symbol] >= 5;
+      if ((b.lb || 0) !== (a.lb || 0)) return (b.lb || 0) - (a.lb || 0);
+      if (aa !== ba) return aa ? -1 : 1;
+      var ad = a.days_since === null || a.days_since === undefined ? 999 : a.days_since;
+      var bd = b.days_since === null || b.days_since === undefined ? 999 : b.days_since;
+      return ad - bd;
+    });
+    var dragon = dragons.length ? dragons[0] : null;
     var dragonActive = !!(dragon && active[dragon.symbol] >= 5);
     var breakAge = dragon && dragon.days_since !== null && dragon.days_since !== undefined
       ? dragon.days_since : null;
-    var mids = dragon ? leaders.filter(function (L) {
-      return L.lb >= 3 && L.lb <= 4 && String(L.date || '') <= String(dragon.date || '');
-    }) : [];
+    var mids = [];
+    if (dragon) {
+      var peakDay = poolDates.indexOf(dragon.date);
+      if (peakDay >= 0) {
+        var seenMids = {};
+        ((pools[poolDates[peakDay]] || {}).zt || []).forEach(function (x) {
+          var lb = x.lbc || 1;
+          var symbol = E.symOf(x.c, x.m);
+          if (lb < 3 || lb > 4 || seenMids[symbol]) return;
+          seenMids[symbol] = 1;
+          var lastLimit = peakDay;
+          var alive = false;
+          for (var j = peakDay + 1; j < poolDates.length; j++) {
+            var here = ((pools[poolDates[j]] || {}).zt || []).some(function (y) {
+              return E.symOf(y.c, y.m) === symbol;
+            });
+            if (!here) break;
+            lastLimit = j;
+          }
+          alive = lastLimit === poolDates.length - 1;
+          var clearAge = lastLimit - peakDay + 1;
+          mids.push({
+            symbol: symbol, name: x.n, lb: lb,
+            last_limit_date: poolDates[lastLimit],
+            clear_age: clearAge, alive: alive,
+            mid_cleared: !alive && clearAge <= 3
+          });
+        });
+      }
+    }
     var mid3 = mids.filter(function (L) { return L.lb === 3; });
     var mid4 = mids.filter(function (L) { return L.lb === 4; });
     var clear3 = mid3.filter(function (L) { return L.mid_cleared; }).length;
@@ -2288,6 +2337,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
       mid_lb: last.lianban || 0, mid_total: mids.length,
       mid3_total: mid3.length, mid3_left: left3, mid3_cleared: mid3.length > 0 && left3 === 0,
       mid4_total: mid4.length, mid4_left: left4, mid4_cleared: mid4.length > 0 && left4 === 0,
+      mid_members: mids,
       mid_text: midText,
       excluded_one_word: excludedOneWord
     };
@@ -3345,6 +3395,8 @@ let DATA = null;
 const TABLES = [];
 let ARC_DATA = null;
 let ARC_LOADING = null;
+let ARC_LIVE_BUSY = false;
+let ARC_LIVE_LAST = "";
 
 function isTransientNetworkError(msg) {
   return /Script error|Failed to fetch|Load failed|NetworkError|请求超时|网络请求失败|加载失败|接口暂时都不可用|HTTP 5\d\d|empty/i
@@ -4664,12 +4716,13 @@ async function loadAuction() {
   if (!picks.length) {
     note.innerHTML = "锚定池里没有可打板的票（今天没有昨日涨停的标的），<b>不打板</b>。";
   } else if (!playable.length) {
-    note.innerHTML = "今天<b>不打板</b>：最高分是 " + esc(picks[0].name) + "（" + picks[0].score + " 分，" +
+    note.innerHTML = "<b>评分第一名只是排序，不是必买。</b> 今天<b>不打板</b>：最高分是 " + esc(picks[0].name) + "（" + picks[0].score + " 分，" +
       esc(picks[0].why) + "），没到 <b>" + REC_MIN + " 分</b>门槛。" +
       "参考：近半年按 7 分门槛只打首选，胜率 57.3%、均值 +0.60%；不到门槛的样本平均是负的。";
   } else {
     const a = playable[0], b = playable[1];
-    note.innerHTML = "橙色标出的就是<b>推荐打板</b>：<b>★" + esc(a.name) + "</b>（" + a.lb + "板·" +
+    note.innerHTML = "<b>注意：评分第一名只是综合排序，不是必买。</b> " +
+      "橙色标出的只是<b>候选</b>：<b>★" + esc(a.name) + "</b>（" + a.lb + "板·" +
       esc(a.bk) + "，" + a.lv + " " + pct(a.pctv, 2) + "，" + a.score + " 分）打板价 <b>" + num(a.hit) + "</b>、止损 " +
       num(a.stop) + (b ? "；次选 " + esc(b.name) + " " + num(b.hit) : "") +
       "。<br>只在<b>封板前挂涨停价排队</b>，收盘没封住次日不管盈亏都走，封住后次日冲高 +3~5% 也走。" +
@@ -4729,6 +4782,76 @@ function auctionRiskHint(quotes, dec) {
   };
 }
 
+let CYCLE_LIVE_BUSY = false;
+let CYCLE_LIVE_LAST = "";
+function renderCycleLive(text, tone) {
+  const cls = tone === "ok" ? "up" : tone === "bad" ? "down" : "";
+  const html = '<b class="' + cls + '">中位实时：</b>' + text;
+  const box = $("#cycleLiveState");
+  if (box) box.innerHTML = html;
+  const review = $("#reviewMidClear");
+  if (review && DATA && DATA.cycle) {
+    const base = DATA.cycle.mid_text || "";
+    const plain = String(text || "").replace(/<[^>]+>/g, "");
+    review.innerHTML = plain && plain.indexOf(base) >= 0
+      ? text
+      : esc(base) + (text ? '<br><span class="k">' + text + '</span>' : "");
+  }
+}
+async function refreshCycleLive() {
+  if (CYCLE_LIVE_BUSY || !DATA || !DATA.cycle || !window.__PHONE_ENGINE__) return;
+  const now = new Date(), hhmm = now.getHours() * 100 + now.getMinutes();
+  const day = now.getDay();
+  if (day === 0 || day === 6) {
+    renderCycleLive(esc(DATA.cycle.live_mid_text || DATA.cycle.mid_text || "暂无数据"), "");
+    return;
+  }
+  if (DATA.meta.date !== snapToday()) {
+    renderCycleLive("页面数据基准日为 " + esc(DATA.meta.date) + "，当前交易日尚未完整更新", "bad");
+    return;
+  }
+  if (hhmm < 925) {
+    renderCycleLive("9:25后开始更新盘中封板状态；当前为收盘快照", "");
+    return;
+  }
+  if (hhmm > 1505) {
+    renderCycleLive(esc(DATA.cycle.live_mid_text || DATA.cycle.mid_text || "暂无数据") + "（收盘定稿）", "ok");
+    return;
+  }
+  CYCLE_LIVE_BUSY = true;
+  try {
+    const E = window.__PHONE_ENGINE__;
+    const zt = await E.jsonpRetry(E.poolUrl("zt", snapToday().replace(/-/g, "")));
+    const sealed = new Set((zt || []).map(x => E.symOf(x.c, x.m)));
+    const members = DATA.cycle.mid_members || [];
+    if (!members.length) {
+      renderCycleLive("等待完整数据更新后计算中位股", "");
+      return;
+    }
+    const groups = { 3: { total: 0, sealed: 0 }, 4: { total: 0, sealed: 0 } };
+    members.forEach(m => {
+      if (!groups[m.lb]) return;
+      groups[m.lb].total++;
+      if (sealed.has(m.symbol)) groups[m.lb].sealed++;
+    });
+    const seg = [3, 4].map(lb => {
+      const g = groups[lb];
+      if (!g.total) return lb + "板无样本";
+      const open = g.total - g.sealed;
+      return lb + "板仍封" + g.sealed + "/" + g.total + (open ? "，盘中未封" + open + "只" : "");
+    }).join(" · ");
+    const text = now.toLocaleTimeString("zh-CN", { hour12: false }).slice(0, 5) +
+      " · " + seg + " · 未收盘不最终确认出清";
+    DATA.cycle.live_mid_text = text;
+    CYCLE_LIVE_LAST = text;
+    renderCycleLive(esc(text), groups[3].sealed + groups[4].sealed ? "" : "ok");
+  } catch (e) {
+    renderCycleLive("盘中状态更新失败，保留" + (CYCLE_LIVE_LAST ? "上次 " + esc(CYCLE_LIVE_LAST) : "收盘快照"), "bad");
+  } finally {
+    CYCLE_LIVE_BUSY = false;
+  }
+}
+
 function safeLoadAuction() {
   return loadAuction().catch(e => {
     AUC.busy = false;
@@ -4781,6 +4904,10 @@ function closeAutoTick() {
   }
 }
 setInterval(closeAutoTick, 60000);
+setTimeout(refreshCycleLive, 1200);
+setInterval(refreshCycleLive, 60000);
+setTimeout(arcLiveAutoTick, 1800);
+setInterval(arcLiveAutoTick, 60000);
 setInterval(() => {
   try {
     if (DATA && !$("#tab-overview").hidden) loadMarketTurnover();
@@ -4907,6 +5034,36 @@ function renderTrade() {
     st: st[it.symbol] || "",
     relay_role: it.relay_role || relayRoles[it.symbol] || ""
   }));
+  const sortedExec = erows.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+  const firstExec = sortedExec[0] || null;
+  const marketGate = (DATA.market && DATA.market.gate) || "yellow";
+  const cycleState = (DATA.cycle && DATA.cycle.state) || "";
+  let execVerdict = "观察";
+  let execReason = "还没有候选清单";
+  if (firstExec) {
+    if ((firstExec.score || 0) < REC_MIN) {
+      execVerdict = "禁止执行";
+      execReason = "评分未达到" + REC_MIN + "分门槛";
+    } else if (marketGate === "red" || /退潮/.test(cycleState)) {
+      execVerdict = "禁止执行";
+      execReason = "市场闸门红灯或情绪退潮";
+    } else if (marketGate === "green" && /主升/.test(cycleState)) {
+      execVerdict = "可候选执行";
+      execReason = "市场闸门绿灯，仍需9:25竞价确认";
+    } else {
+      execVerdict = "只观察";
+      execReason = "市场闸门为黄灯，评分第一也不能直接买";
+    }
+  }
+  const execGate = $("#execGateHint");
+  if (execGate) {
+    execGate.innerHTML = firstExec
+      ? '<b>评分第一名：' + esc(firstExec.name) + '（' + (firstExec.score || 0) + '分）只是排序。</b> ' +
+        '当前结论：<span class="tag ' + (execVerdict === "可候选执行" ? "ok" : execVerdict === "禁止执行" ? "bad" : "") +
+        '">' + esc(execVerdict) + '</span> · ' + esc(execReason) +
+        '。最终必须结合9:15–9:25竞价、板块反馈和封板质量确认。'
+      : '<b>评分第一名只代表候选排序，不等于可以买。</b> 当前没有候选清单；仍需同时满足市场闸门和9:25竞价确认。';
+  }
   table("t_exec", erows, [
     { key: "name", label: "个股", left: true },
     { key: "price", label: "现价", num: true, sortable: true, render: r => num(r.price) },
@@ -5337,7 +5494,7 @@ function renderReviewDashboard() {
       esc(cyc.dragon ? cyc.dragon.name + " " + cyc.dragon.lb + "板" : "-") + '</b></div>' +
     '<div class="review-cycle-row"><span>断板天数</span><b>' +
       (cyc.break_age === null || cyc.break_age === undefined ? "-" : cyc.break_age + "日") + '</b></div>' +
-    '<div class="review-cycle-row"><span>中位出清</span><b>' +
+    '<div class="review-cycle-row"><span>中位出清</span><b id="reviewMidClear">' +
       esc(cyc.mid_text || "-") + '</b></div>' +
     '<div class="review-cycle-row"><span>一字高标排除</span><b>' + int(cyc.excluded_one_word || 0) + '只</b></div>';
   let execTone = "warn", execTitle = "等待9:25复核", execText = "当前只有收盘预案，不能直接开仓；9:25根据情绪锚定池强弱决定。";
@@ -6852,7 +7009,90 @@ const ARCCOLS = [
   { key: "flat_days", label: "底部平台", num: true, sortable: true, render: r => num(r.flat_days, 0) + "日" },
   { key: "low_step", label: "低点抬高", num: true, sortable: true, cls: () => "up", render: r => pct(r.low_step, 2) },
   { key: "bk", label: "板块 / 题材", left: true, render: sectorCell },
+  { key: "exec_window", label: "执行窗口", left: true, render: () => '<span class="tag">14:50–14:57</span>' },
 ];
+
+function arcMa(values, n) {
+  if (values.length < n) return null;
+  return values.slice(-n).reduce((a, b) => a + b, 0) / n;
+}
+
+function screenArcLive(states, quotes) {
+  const out = [];
+  (states || []).forEach(st => {
+    const q = quotes && quotes[st.symbol];
+    if (!q || !q.close || !q.preClose || !q.vol) return;
+    const growth = /^(sz30|sh68)/.test(st.symbol);
+    const limit = growth ? 19.5 : 9.7;
+    const pct = (q.close / q.preClose - 1) * 100;
+    const maxDay = growth ? 13 : 7.3;
+    if (pct <= 0 || pct >= limit - 0.4 || pct > maxDay) return;
+    const highBreakPct = (q.high / st.platform_high - 1) * 100;
+    const breakPct = (q.close / st.platform_high - 1) * 100;
+    if (highBreakPct <= 0.1 || q.close < st.platform_high * 0.94) return;
+    const volRatio = st.avg_vol5 ? q.vol / st.avg_vol5 : null;
+    if (volRatio === null || volRatio < 1.4 || q.vol <= (st.vols[st.vols.length - 1] || 0)) return;
+    if (st.close_3ago && (q.close / st.close_3ago - 1) * 100 > (growth ? 22 : 15)) return;
+    const closes = (st.closes || []).concat([q.close]);
+    const ma5 = arcMa(closes, 5), ma10 = arcMa(closes, 10), ma20 = arcMa(closes, 20);
+    if (!ma5 || !ma10 || !ma20 || ma5 < ma10 * 0.995 || q.close < ma20) return;
+    const maStatus = ma5 >= ma10 && ma10 >= ma20 ? "多头排列" : "转强";
+    const launchBoost = Math.min(8, (volRatio - 1.4) * 5) +
+      Math.max(0, Math.min(4, breakPct * 0.8));
+    const score = Math.max(0, Math.min(100, Math.round(st.arc_score * 0.9 + launchBoost)));
+    out.push(Object.assign({}, st, {
+      date: snapToday(), live: true, live_time: new Date().toLocaleTimeString("zh-CN", { hour12: false }).slice(0, 5),
+      close: +q.close.toFixed(2), pct: +pct.toFixed(2),
+      ma5: +ma5.toFixed(2), ma10: +ma10.toFixed(2), ma20: +ma20.toFixed(2),
+      ma_status: maStatus, vol_ratio: +volRatio.toFixed(2),
+      breakout: breakPct > 0, stage: breakPct > 0 ? "右侧启动" : "盘中突破待确认",
+      break_pct: +breakPct.toFixed(2), high_break_pct: +highBreakPct.toFixed(2),
+      arc_score: score
+    }));
+  });
+  out.sort((a, b) => b.arc_score - a.arc_score || b.vol_ratio - a.vol_ratio);
+  return out;
+}
+
+async function refreshArcRightLive(force) {
+  if (ARC_LIVE_BUSY || !ARC_DATA || !ARC_DATA.states || !ARC_DATA.states.length) return ARC_DATA;
+  const now = new Date();
+  const today = snapToday();
+  if (ARC_DATA.date === today && !force) return ARC_DATA;
+  ARC_LIVE_BUSY = true;
+  $("#arcInfo").textContent = "正在用14:50实时行情确认圆弧突破…";
+  try {
+    const syms = ARC_DATA.states.map(x => x.symbol);
+    let quotes = {};
+    if (PHONE && window.__PHONE_ENGINE__) quotes = await window.__PHONE_ENGINE__.quoteBatch(syms);
+    else {
+      const r = await fetch("api/quote?syms=" + syms.join(","));
+      quotes = await r.json();
+    }
+    const rows = screenArcLive(ARC_DATA.states, quotes);
+    ARC_DATA.live_rows = rows;
+    ARC_DATA.live_date = today;
+    ARC_DATA.live_time = now.toLocaleTimeString("zh-CN", { hour12: false }).slice(0, 5);
+    ARC_LIVE_LAST = today + "|" + now.getHours() + ":" + String(now.getMinutes()).padStart(2, "0");
+    renderArcRight();
+    return ARC_DATA;
+  } catch (e) {
+    $("#arcInfo").textContent = "实时形态确认失败：" + e.message;
+    throw e;
+  } finally {
+    ARC_LIVE_BUSY = false;
+  }
+}
+
+function arcLiveAutoTick() {
+  const now = new Date();
+  const day = now.getDay();
+  const hhmm = now.getHours() * 100 + now.getMinutes();
+  if (day === 0 || day === 6 || hhmm < 1450 || hhmm > 1500) return;
+  const key = snapToday() + "|" + now.getHours() + ":" + String(now.getMinutes()).padStart(2, "0");
+  if (ARC_LIVE_LAST === key) return;
+  refreshArcRightLive(true).catch(() => {});
+}
 
 async function loadArcRight(force) {
   if (ARC_LOADING && !force) return ARC_LOADING;
@@ -6893,7 +7133,8 @@ async function loadArcRight(force) {
 function renderArcRight() {
   const data = ARC_DATA;
   if (!data) return;
-  const rows = data.rows || [];
+  const liveRows = Array.isArray(data.live_rows) ? data.live_rows : null;
+  const rows = liveRows || data.rows || [];
   const summary = data.summary || {};
   const hist = summary.insufficient_history || 0;
   const best = rows.length ? rows[0] : null;
@@ -6907,9 +7148,11 @@ function renderArcRight() {
   table("t_arc", rows, ARCCOLS, {
     sort: (a, b) => b.arc_score - a.arc_score || b.break_pct - a.break_pct || a.symbol.localeCompare(b.symbol),
   });
-  $("#arcInfo").textContent = "扫描 " + (summary.scanned || 0) + " 只 · 命中 " + rows.length + " 只";
+  $("#arcInfo").textContent = "扫描 " + (summary.scanned || 0) + " 只 · " +
+    (liveRows ? "14:50实时命中 " : "命中 ") + rows.length + " 只";
   $("#arcFoot").textContent = "扫描口径：" + (data.scope || "沪深A股") +
-    "；形态识别不是买入保证，点名称或行打开日K复核。";
+    (liveRows ? "；实时结果使用当前价和累计成交量，未使用收盘后数据。" : "；当前为最近完整日K结果。") +
+    " 形态识别不是买入保证，点名称或行打开日K复核。";
 }
 
 /* ---------- 监控①：前期启动首板 → 箱体横盘 → 今天首板 ---------- */
@@ -8598,6 +8841,7 @@ document.addEventListener("click", e => {
 
 $("#btnHelp").addEventListener("click", () => { $("#help").hidden = false; });
 $("#arcRefresh").addEventListener("click", () => { loadArcRight(true).catch(() => {}); });
+$("#arcLiveRefresh").addEventListener("click", () => { refreshArcRightLive(true).catch(() => {}); });
 
 $("#btnExport").addEventListener("click", () => {
   const m = DATA.meta;
