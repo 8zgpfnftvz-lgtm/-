@@ -756,6 +756,13 @@ tbody tr:hover td .lnk{text-decoration:underline}
     <span class="k" id="arcInfo">等待加载…</span>
   </div>
   <div class="panel"><table id="t_arc"></table></div>
+  <details id="arcWatchPanel" style="margin-top:10px">
+    <summary><b>已启动观察</b> <span class="k" id="arcWatchInfo"></span></summary>
+    <div class="panel" style="margin-top:8px"><table id="t_arc_watch"></table></div>
+    <div class="k" style="margin-top:8px">
+      圆弧形态已经启动，但距底部涨幅或短期涨幅偏大，只用于复盘和跟踪，不作为尾盘追高买点。
+    </div>
+  </details>
   <div class="k" id="arcFoot" style="margin-top:10px">
     前期回撤≥20%，60日抛物线圆度R²≥0.55，底部平台≥5日，低点逐步抬高；
     MA5≥MA10且MA20走平向上；底部均量≤下跌段0.85倍，当日量≥5日均量1.4倍；
@@ -2654,6 +2661,25 @@ tbody tr:hover td .lnk{text-decoration:underline}
     return out;
   }
 
+  function recentFirstBoardCandidates(pools, poolDates) {
+    var dates = (poolDates || []).slice(-8);
+    var out = [];
+    dates.forEach(function (date, idx) {
+      ((pools[date] || {}).zt || []).forEach(function (x) {
+        if (Number(x.lbc || 1) !== 1) return;
+        var sym = E.symOf(x.c, x.m);
+        if (!allowed(sym)) return;
+        for (var j = idx + 1; j < dates.length; j++) {
+          if (((pools[dates[j]] || {}).zt || []).some(function (y) {
+            return E.symOf(y.c, y.m) === sym;
+          })) return;
+        }
+        out.push(sym);
+      });
+    });
+    return out.filter(function (s, i, a) { return a.indexOf(s) === i; });
+  }
+
   /* 用「日线 + 今天的实时半根K线」精算：回踩幅度、缩量、MA5/MA10、距60日高、板块涨停家数 */
   function fanbaoMatch(bars, q) {
     if (!bars || bars.length < 40 || !q || !q.close) return null;
@@ -3064,7 +3090,9 @@ tbody tr:hover td .lnk{text-decoration:underline}
         ctx.lmap = lmap;
         need = need.concat(Object.keys(lmap));
         // 首板回踩预筛：把候选加到待拉日线列表
-        var fanpre = fanbaoCandidates(ctx.snap, window.__FANBAO__);
+        var fanpre = fanbaoCandidates(ctx.snap, window.__FANBAO__)
+          .concat(recentFirstBoardCandidates(ctx.pools, ctx.poolDates))
+          .filter(function (s, i, a) { return a.indexOf(s) === i; });
         ctx.fanpre = fanpre;
         need = need.concat(fanpre);
         var uniq = need.filter(function (v, i) { return need.indexOf(v) === i; });
@@ -7137,6 +7165,12 @@ const ARCCOLS = [
   { key: "bk", label: "板块 / 题材", left: true, render: sectorCell },
   { key: "exec_window", label: "执行窗口", left: true, render: () => '<span class="tag">14:50–14:57</span>' },
 ];
+const ARCWATCHCOLS = [
+  ARCCOLS[0], ARCCOLS[1], ARCCOLS[2], ARCCOLS[3],
+  { key: "watch_note", label: "启动状态", left: true, render: r =>
+      '<span class="tag hi">' + esc(r.watch_note || "已启动，只观察") + "</span>" },
+  ARCCOLS[8], ARCCOLS[9], ARCCOLS[10], ARCCOLS[11], ARCCOLS[12], ARCCOLS[13]
+];
 
 function arcMa(values, n) {
   if (values.length < n) return null;
@@ -7261,6 +7295,7 @@ function renderArcRight() {
   if (!data) return;
   const liveRows = Array.isArray(data.live_rows) ? data.live_rows : null;
   const rows = liveRows || data.rows || [];
+  const watchRows = data.watch || [];
   const summary = data.summary || {};
   const hist = summary.insufficient_history || 0;
   const best = rows.length ? rows[0] : null;
@@ -7269,13 +7304,22 @@ function renderArcRight() {
     summaryCard.innerHTML =
       '<div class="k">圆弧底右侧启动</div><b>' + rows.length + ' 只</b>' +
       '<div class="k">' + (best ? "最高 " + best.arc_score + "/100 · " + esc(best.name) : "暂无命中") +
-      ' · 历史不足 ' + hist + ' 只</div>';
+      ' · 已启动观察 ' + watchRows.length + ' 只 · 历史不足 ' + hist + ' 只</div>';
   }
   table("t_arc", rows, ARCCOLS, {
     sort: (a, b) => b.arc_score - a.arc_score || b.break_pct - a.break_pct || a.symbol.localeCompare(b.symbol),
   });
   $("#arcInfo").textContent = "扫描 " + (summary.scanned || 0) + " 只 · " +
-    (liveRows ? "14:50实时命中 " : "命中 ") + rows.length + " 只";
+    (liveRows ? "14:50实时命中 " : "命中 ") + rows.length +
+    " 只 · 已启动观察 " + watchRows.length + " 只";
+  const watchPanel = $("#arcWatchPanel");
+  if (watchPanel) watchPanel.hidden = !watchRows.length;
+  if (watchRows.length) {
+    table("t_arc_watch", watchRows, ARCWATCHCOLS, {
+      sort: (a, b) => b.arc_score - a.arc_score || a.symbol.localeCompare(b.symbol)
+    });
+    $("#arcWatchInfo").textContent = watchRows.length + " 只";
+  }
   $("#arcFoot").textContent = "扫描口径：" + (data.scope || "沪深A股") +
     (liveRows ? "；实时结果使用当前价和累计成交量，未使用收盘后数据。" : "；当前为最近完整日K结果。") +
     " 形态识别不是买入保证，点名称或行打开日K复核。";
@@ -7954,7 +7998,7 @@ function drawStock() {
 
 const INLINE = !!window.__DATA__;      // 静态快照模式（直接双击 html 打开）
 const PHONE = !!window.__PHONE_BUILD__; // 手机直连模式（自己抓数、自己算）
-const DATA_CACHE_VERSION = "2026-11-17-node-2";
+const DATA_CACHE_VERSION = "2026-11-18-tail-1";
 
 function showProg(text) {
   const box = $("#prog");
