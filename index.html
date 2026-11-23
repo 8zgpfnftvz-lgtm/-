@@ -1688,7 +1688,9 @@ tbody tr:hover td .lnk{text-decoration:underline}
     var currentMaxBoard = zt.reduce(function (m, p) { return Math.max(m, Number(p.lbc || 1)); }, 0);
     var midSummary = cyc.mid_text || (midCleared ? '已出清' : '未出清');
     if (midCleared) {
-      midSummary = '中位快速出清';
+      midSummary = breakAge >= 1 && breakAge <= 3
+        ? '中位快速出清（首阴第' + breakAge + '日）'
+        : (breakAge > 3 ? '旧周期中位已出清（首阴第' + breakAge + '日）' : '中位已出清');
       if (node3.length === 1) {
         midSummary += ' · 今日2进3唯一：' + node3[0].name + (node3[0].yizi ? '（一字）' : '');
       } else if (node3.length > 1) {
@@ -1721,7 +1723,8 @@ tbody tr:hover td .lnk{text-decoration:underline}
       nodeLayer = 3;
       nodePreferred = node2[0] || null;
     } else if (node3.length === 1) {
-      nodeTitle = '中位快速出清，2进3唯一：' + node3[0].name + (node3[0].yizi ? '（一字）' : '');
+      nodeTitle = (breakAge >= 1 && breakAge <= 3 ? '中位快速出清' : '中位已出清') +
+        '，2进3唯一：' + node3[0].name + (node3[0].yizi ? '（一字）' : '');
       nodeAction = node3[0].yizi
         ? '今天2进3已经完成，但唯一三板是一字，缺少换手；次日3进4不排一字，只看开板承接、放量回封和弱转强。'
         : '次日执行3进4确认；必须看竞价、承接和弱转强，不能只凭唯一性无条件买。';
@@ -4846,6 +4849,8 @@ function cyclePoolRows(items) {
 
 function cycleMidSummary(items) {
   const cyc = (DATA && DATA.cycle) || {};
+  const breakAge = cyc.break_age === null || cyc.break_age === undefined
+    ? null : Number(cyc.break_age);
   const rows = cyclePoolRows(items);
   const members = cyc.mid_members || [];
   const nowBySym = {};
@@ -4859,7 +4864,9 @@ function cycleMidSummary(items) {
 
   if (members.length) {
     if (!alive.length) {
-      out.push("中位快速出清");
+      out.push(breakAge >= 1 && breakAge <= 3
+        ? "中位快速出清（首阴第" + breakAge + "日）"
+        : (breakAge > 3 ? "旧周期中位已出清（首阴第" + breakAge + "日）" : "中位已出清"));
     } else {
       const alive3 = alive.filter(x => Number(x.lb || 0) === 3).length;
       const alive4 = alive.filter(x => Number(x.lb || 0) === 4).length;
@@ -6229,8 +6236,9 @@ function leaderRelayView() {
     };
   } else if (zt.filter(x => Number(x.lbc || 1) === 3).length === 1) {
     const onlyThree = zt.find(x => Number(x.lbc || 1) === 3);
+    const breakAge = Number(cycle.break_age);
     node = {
-      cls: "done", title: "中位快速出清·2进3唯一",
+      cls: "done", title: (breakAge >= 1 && breakAge <= 3 ? "中位快速出清" : "中位已出清") + "·2进3唯一",
       text: "今日唯一3板是" + onlyThree.name + "，2进3已经完成；下一步只观察它能否通过3进4确认，不把唯一性当成无条件买入理由。"
     };
   } else if (candidates.length) {
@@ -6489,7 +6497,8 @@ function nodeExecutionView() {
     nodeLayer = 3;
   } else if (three.length === 1) {
     tone = "done";
-    title = "中位快速出清 · 2进3唯一：" + three[0].name + (three[0].yizi ? "（一字）" : "");
+    title = (breakAge >= 1 && breakAge <= 3 ? "中位快速出清" : "中位已出清") +
+      " · 2进3唯一：" + three[0].name + (three[0].yizi ? "（一字）" : "");
     action = three[0].yizi
       ? "今天2进3已经完成，但唯一三板是一字，缺少换手。明天3进4不排一字，只看开板后的承接、放量回封和弱转强；没有换手确认就放弃。"
       : "今天2进3已经完成；下一步的确认层级是3进4，必须看竞价、承接和能否弱转强，不能仅凭唯一性直接无条件买。";
