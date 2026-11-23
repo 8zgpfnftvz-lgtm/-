@@ -844,16 +844,18 @@ tbody tr:hover td .lnk{text-decoration:underline}
     期望=平均收益。右上角卡片会同时给出你的实盘数据和回测基线（7分门槛只打首选 57.3%／+0.60%）。
   </div>
 
-  <h3>④ 昨日清单回验</h3>
+  <h3>④ 历史清单回验</h3>
   <div class="bar">
-    <div><div class="k">用今天的行情验证前一份清单</div></div>
+    <div><div class="k">选择历史清单，按下一交易日行情回验</div></div>
+    <select id="revDay" aria-label="选择回验清单日期"></select>
     <span class="k" id="revInfo"></span>
     <button type="button" id="revRefresh">重新回验</button>
   </div>
   <div class="panel"><table id="t_review"></table></div>
   <div class="k" style="margin:-4px 0 12px">
-    口径：<b>个股命中</b>＝今日收盘收涨；<b>摸板</b>＝今日最高价达到触发价（涨停价）；
-    <b>收盘收益</b>＝按触发价买入、今日收盘卖出；<b>最大收益</b>＝按触发价买入、今日最高点。没摸板就不算成交。
+    默认保留最近 <b>20 份</b>执行清单及回验结果，页面可查看最近 <b>10 份</b>。历史清单用对应下一交易日的日K回验并保存在本机；
+    <b>摸板</b>＝验证日最高价达到触发价，<b>收盘收益</b>＝触发价买入并按验证日收盘卖出，
+    <b>最大收益</b>＝按验证日最高价计算。没摸板不算成交。历史日期缺少当日板块池时，不伪造“方向命中”。
   </div>
 </section>
 
@@ -1750,7 +1752,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
     if (nodePreferred) {
       var np = nodePreferred;
       var npBuy = np.close ? np.close * 1.1 : null;
-      L.push('**节点首选：' + np.name + '（' + (np.lbc || 1) + '板 · ' +
+      L.push('**本层级执行首选：' + np.name + '（' + (np.lbc || 1) + '板 · ' +
         (np.bk || '其他') + ' · 首封 ' + hhmm(np.fbt) + '）**');
       L.push('');
       L.push('| 项目 | 计划 |');
@@ -5009,7 +5011,7 @@ if (window.__PHONE_BUILD__) {
 }
 
 /* ---------- 交易：执行清单 / 日志 / 实盘统计 ---------- */
-const TR_KEY = "tradeLog", EX_KEY = "execPlans";
+const TR_KEY = "tradeLog", EX_KEY = "execPlans", EX_HISTORY_MAX = 20;
 function trLoad() {
   try { const a = JSON.parse(localStorage.getItem(TR_KEY) || "[]"); return Array.isArray(a) ? a : []; }
   catch (e) { return []; }
@@ -5026,7 +5028,10 @@ function exLoad() {
 function exSave(o) {
   const a = exAll();
   a[o.date] = o;
-  try { localStorage.setItem(EX_KEY, JSON.stringify(a)); } catch (e) { }
+  const keep = Object.keys(a).sort().slice(-EX_HISTORY_MAX);
+  const trimmed = {};
+  keep.forEach(d => { trimmed[d] = a[d]; });
+  try { localStorage.setItem(EX_KEY, JSON.stringify(trimmed)); } catch (e) { }
 }
 function tradeExpectation(p) {
   if (!p) return "-";
@@ -5255,76 +5260,203 @@ function renderTrade() {
   ]);
 }
 
-/* 昨日清单回验：用今天的行情验证上一份执行清单 */
+/* 历史清单回验：保留最近20份，用每个清单对应的下一交易日行情验证。 */
+const PLAN_REVIEW_UI_MAX = 10;
+const PLAN_REVIEW_KEY = "planReviewHistoryV1", PLAN_REVIEW_MAX = 20;
+
+function planReviewCacheLoad() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(PLAN_REVIEW_KEY) || "[]");
+    return Array.isArray(rows) ? rows : [];
+  } catch (e) { return []; }
+}
+
+function planReviewCacheSave(record) {
+  const rows = planReviewCacheLoad().filter(x =>
+    !(x && x.planDate === record.planDate && x.reviewDate === record.reviewDate));
+  rows.push(record);
+  rows.sort((a, b) => String(a.reviewDate).localeCompare(String(b.reviewDate)));
+  try {
+    localStorage.setItem(PLAN_REVIEW_KEY, JSON.stringify(rows.slice(-PLAN_REVIEW_MAX)));
+  } catch (e) { }
+}
+
+function planReviewDates() {
+  const dates = [...new Set(((DATA && DATA.emotion) || []).map(x => x && x.date).filter(Boolean))];
+  if (DATA && DATA.meta && DATA.meta.date) dates.push(DATA.meta.date);
+  return [...new Set(dates)].sort();
+}
+
+function planNextTradeDate(planDate, dates) {
+  return (dates || []).find(d => d > planDate) || "";
+}
+
+function normalizeReviewBars(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(b => {
+    if (!b) return null;
+    if (Array.isArray(b)) {
+      return { date: b[0], open: +b[1], close: +b[2], high: +b[3], low: +b[4] };
+    }
+    return {
+      date: b.date, open: +(b.open !== undefined ? b.open : b.o),
+      close: +(b.close !== undefined ? b.close : b.c),
+      high: +(b.high !== undefined ? b.high : b.h),
+      low: +(b.low !== undefined ? b.low : b.l)
+    };
+  }).filter(x => x && x.date && Number.isFinite(x.open) && Number.isFinite(x.close));
+}
+
+async function loadReviewSeries(syms) {
+  const out = {};
+  const list = [...new Set(syms)];
+  let cursor = 0;
+  async function worker() {
+    while (cursor < list.length) {
+      const sym = list[cursor++];
+      try {
+        let raw;
+        if (PHONE && window.__PHONE_ENGINE__) raw = await window.__PHONE_ENGINE__.kline(sym, 170);
+        else {
+          const r = await fetch("api/kline?symbol=" + encodeURIComponent(sym));
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          raw = (await r.json()).bars;
+        }
+        out[sym] = normalizeReviewBars(raw);
+      } catch (e) {
+        out[sym] = [];
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(6, list.length) }, worker));
+  return out;
+}
+
 async function renderPlanReview() {
   const box = document.getElementById("t_review");
   if (!box) return;
   const info = document.getElementById("revInfo");
+  const select = document.getElementById("revDay");
   if (!DATA || !DATA.anchor) {
     if (info) info.textContent = "数据加载中，完成后自动显示回验结果";
     table("t_review", [], [
       { key: "name", label: "个股", left: true },
-      { key: "chg", label: "今日涨跌", num: true },
+      { key: "chg", label: "验证日涨跌", num: true },
       { key: "ret", label: "收盘收益", num: true },
     ]);
     return;
   }
   const a = exAll();
-  const days = Object.keys(a).filter(d => d < snapToday()).sort();
+  const tradeDates = planReviewDates();
+  const allPlanDays = Object.keys(a).sort();
+  const pairs = allPlanDays.map(d => ({ planDate: d, reviewDate: planNextTradeDate(d, tradeDates) }))
+    .filter(x => x.reviewDate);
+  const recentPairs = pairs.slice(-PLAN_REVIEW_UI_MAX).reverse();
+  if (select) {
+    const old = select.value;
+    select.innerHTML = recentPairs.map(x =>
+      '<option value="' + esc(x.planDate) + '">' + esc(x.planDate + " → " + x.reviewDate) + "</option>"
+    ).join("");
+    select.value = recentPairs.some(x => x.planDate === old) ? old :
+      (recentPairs[0] ? recentPairs[0].planDate : "");
+  }
   const cols = [
+    { key: "plan_date", label: "清单日", left: true },
+    { key: "review_date", label: "验证日", left: true },
     { key: "name", label: "个股", left: true },
     { key: "lb", label: "板数", num: true, render: r => (r.lb || 1) + " 板" },
     { key: "hit", label: "触发价", num: true, render: r => num(r.hit) },
-    { key: "gap", label: "今日高开", num: true, cls: r => cls(r.gap), render: r => r.gap === null ? "-" : pct(r.gap, 2) },
-    { key: "chg", label: "今日涨跌", num: true, cls: r => cls(r.chg), render: r => r.chg === null ? "-" : pct(r.chg, 2) },
+    { key: "gap", label: "验证日高开", num: true, cls: r => cls(r.gap), render: r => r.gap === null ? "-" : pct(r.gap, 2) },
+    { key: "chg", label: "验证日涨跌", num: true, cls: r => cls(r.chg), render: r => r.chg === null ? "-" : pct(r.chg, 2) },
     { key: "touched", label: "摸板", left: true, render: r => r.touched ? '<span class="tag ok">摸到</span>' : '<span class="tag bad">没摸</span>' },
     { key: "ret", label: "收盘收益", num: true, cls: r => cls(r.ret), render: r => r.ret === null ? "-" : pct(r.ret, 2) },
     { key: "maxRet", label: "最大收益", num: true, cls: r => cls(r.maxRet), render: r => r.maxRet === null ? "-" : pct(r.maxRet, 2) },
-    { key: "dir", label: "方向", left: true, render: r => r.dir ? '<span class="tag ok">命中</span>' : '<span class="tag">未命中</span>' },
+    { key: "dir", label: "方向", left: true, render: r =>
+        r.dir === null || r.dir === undefined ? '<span class="tag">历史无板块池</span>' :
+          (r.dir ? '<span class="tag ok">命中</span>' : '<span class="tag">未命中</span>') },
   ];
-  if (!days.length) {
-    info.textContent = "还没有历史清单（每天竞价时生成一份，第二天自动回验）";
+  if (!recentPairs.length) {
+    info.textContent = "还没有可回验的历史清单（每天竞价生成一份，下一交易日自动回验）";
     table("t_review", [], cols);
     return;
   }
-  const d = days[days.length - 1];
+  const selected = select && select.value ? select.value : recentPairs[0].planDate;
+  const pair = recentPairs.find(x => x.planDate === selected) || recentPairs[0];
+  const d = pair.planDate, reviewDate = pair.reviewDate;
   const plan = a[d];
   if (!plan.items || !plan.items.length) {
     info.textContent = d + " 的清单为空";
     table("t_review", [], cols);
     return;
   }
-  let quotes = {};
-  try {
-    const syms = plan.items.map(it => it.symbol);
-    if (PHONE && window.__PHONE_ENGINE__) quotes = await window.__PHONE_ENGINE__.quoteBatch(syms);
-    else { const r = await fetch("api/quote?syms=" + syms.join(",")); quotes = await r.json(); }
-  } catch (e) {
-    info.textContent = "取行情失败：" + e.message;
-    return;
+  const cached = planReviewCacheLoad().find(x =>
+    x && x.planDate === d && x.reviewDate === reviewDate);
+  const syms = plan.items.map(it => it.symbol).filter(Boolean);
+  const isCurrentReview = reviewDate === ((DATA.meta && DATA.meta.date) || snapToday());
+  let quotes = {}, series = {};
+  if (isCurrentReview) {
+    try {
+      if (PHONE && window.__PHONE_ENGINE__) quotes = await window.__PHONE_ENGINE__.quoteBatch(syms);
+      else {
+        const r = await fetch("api/quote?syms=" + syms.join(","));
+        quotes = await r.json();
+      }
+    } catch (e) {
+      info.textContent = "取行情失败：" + e.message;
+      return;
+    }
+  } else {
+    info.textContent = "正在读取 " + reviewDate + " 历史日K…";
+    series = await loadReviewSeries(syms);
   }
   const ztBk = {};
-  ((DATA.anchor && DATA.anchor.pool) || []).forEach(p => {
-    if (p.group === "涨停") ztBk[String(marketThemeOf(p) || "其他").trim()] = 1;
-  });
+  if (isCurrentReview) {
+    ((DATA.anchor && DATA.anchor.pool) || []).forEach(p => {
+      if (p.group === "涨停") ztBk[String(marketThemeOf(p) || "其他").trim()] = 1;
+    });
+  }
   const rows = plan.items.map(it => {
-    const q = quotes[it.symbol] || {};
-    const pre = q.preClose || null, open = q.open || null, high = q.high || null, close = q.close || null;
+    let pre = null, open = null, high = null, close = null;
+    if (isCurrentReview) {
+      const q = quotes[it.symbol] || {};
+      pre = q.preClose || null; open = q.open || null; high = q.high || null; close = q.close || null;
+    } else {
+      const bars = series[it.symbol] || [];
+      const idx = bars.findIndex(b => b.date === reviewDate);
+      if (idx > 0) {
+        const b = bars[idx], prev = bars[idx - 1];
+        pre = prev.close || null; open = b.open || null; high = b.high || null; close = b.close || null;
+      }
+    }
     const hit = it.hit || null;
     const touched = !!(high && hit && high >= hit - 1e-9);
     return Object.assign({}, it, {
+      plan_date: d, review_date: reviewDate,
       gap: (pre && open) ? (open / pre - 1) * 100 : null,
       chg: (pre && close) ? (close / pre - 1) * 100 : null,
       touched: touched,
       ret: (touched && close && hit) ? (close / hit - 1) * 100 : null,
       maxRet: (touched && high && hit) ? (high / hit - 1) * 100 : null,
-      dir: !!ztBk[String(marketThemeOf(it) || "其他").trim()]
+      dir: isCurrentReview ? !!ztBk[String(marketThemeOf(it) || "其他").trim()] : null
     });
   });
   const upN = rows.filter(r => r.chg !== null && r.chg > 0).length;
   const hitN = rows.filter(r => r.touched).length;
   const dirN = rows.filter(r => r.dir).length;
-  info.textContent = d + " 清单 " + rows.length + " 只：收涨 " + upN + " · 摸板 " + hitN + " · 方向命中 " + dirN;
+  const hasFreshData = rows.some(r => r.chg !== null || r.touched);
+  if (hasFreshData) {
+    planReviewCacheSave({
+      planDate: d, reviewDate: reviewDate, rows: rows,
+      upN: upN, hitN: hitN, dirN: dirN,
+      current: isCurrentReview, savedAt: new Date().toISOString()
+    });
+  } else if (cached && Array.isArray(cached.rows) && cached.rows.length) {
+    info.textContent = d + " → " + reviewDate + "：行情接口暂无历史数据，显示本地保存的回验结果";
+    table("t_review", cached.rows, cols, { sort: (a, b) => (b.maxRet || -999) - (a.maxRet || -999) });
+    return;
+  }
+  info.textContent = d + " → " + reviewDate + "：清单 " + rows.length + " 只 · 收涨 " +
+    upN + " · 摸板 " + hitN + (isCurrentReview ? " · 方向命中 " + dirN : " · 历史方向未记录");
   table("t_review", rows, cols, { sort: (a, b) => (b.maxRet || -999) - (a.maxRet || -999) });
 }
 
@@ -6156,7 +6288,7 @@ function relayHintTags(symbol, row) {
   if (lb === 2 && !same.some(x => Number(x.lbc || 1) === 1)) out.push("无下位首板联动");
   (p.relay_tags || []).forEach(x => out.push(x));
   const exec = nodeExecutionView();
-  if (exec && exec.preferred && exec.preferred.symbol === symbol) out.push("节点首选");
+  if (exec && exec.preferred && exec.preferred.symbol === symbol) out.push("本层级首选");
   return out;
 }
 
@@ -6413,7 +6545,7 @@ function nodeExecutionHtml() {
         esc(x.name + " · " + x.lb + "板 · " + x.theme + " · " + x.path + (x.yizi ? " · 一字" : "")) + "</span>").join("")
     : '<span class="tag">暂无合格候选</span>';
   const preferred = view.preferred
-    ? '<div class="node-exec-action">节点首选：<b>' + esc(view.preferred.name) +
+    ? '<div class="node-exec-action">本层级执行首选：<b>' + esc(view.preferred.name) +
       '</b> · ' + esc(view.preferred.lb + "板 · " + view.preferred.theme) +
       ' · 首封 ' + esc(hhmm(view.preferred.fbt)) + '</div>'
     : "";
@@ -6428,7 +6560,7 @@ function nodeExecutionHtml() {
     '<div class="node-exec-names">' + tags + '</div>' +
     '<div class="node-exec-meta">' + esc(nodeHistorySummary(historyRows)) + '</div>' +
     nodeHistoryHtml(historyRows) +
-    '<div class="relay-auction-note">这是按六篇文章规则生成的执行层级提示，不会修改原有打板评分和推荐顺序。竞价弱转强、封板质量与止损仍须单独确认。</div>' +
+    '<div class="relay-auction-note">竞价弱转强、封板质量与止损仍须单独确认。</div>' +
     '</div>';
 }
 
@@ -9035,6 +9167,12 @@ $("#exAddBtn").addEventListener("click", async () => {
 });
 
 $("#revRefresh").addEventListener("click", () => {
+  renderPlanReview().catch(e => {
+    const info = document.getElementById("revInfo");
+    if (info) info.textContent = "回验暂时失败：" + e.message;
+  });
+});
+$("#revDay").addEventListener("change", () => {
   renderPlanReview().catch(e => {
     const info = document.getElementById("revInfo");
     if (info) info.textContent = "回验暂时失败：" + e.message;
