@@ -2369,16 +2369,17 @@ tbody tr:hover td .lnk{text-decoration:underline}
     var mids = [];
     if (dragon) {
       var peakDay = poolDates.indexOf(dragon.date);
-      if (peakDay >= 0) {
+      var breakDay = peakDay >= 0 ? peakDay + 1 : -1;
+      if (peakDay >= 0 && breakDay < poolDates.length) {
         var seenMids = {};
-        ((pools[poolDates[peakDay]] || {}).zt || []).forEach(function (x) {
+        ((pools[poolDates[breakDay]] || {}).zt || []).forEach(function (x) {
           var lb = x.lbc || 1;
           var symbol = E.symOf(x.c, x.m);
           if (lb < 3 || lb > 4 || seenMids[symbol]) return;
           seenMids[symbol] = 1;
-          var lastLimit = peakDay;
+          var lastLimit = breakDay;
           var alive = false;
-          for (var j = peakDay + 1; j < poolDates.length; j++) {
+          for (var j = breakDay + 1; j < poolDates.length; j++) {
             var here = ((pools[poolDates[j]] || {}).zt || []).some(function (y) {
               return E.symOf(y.c, y.m) === symbol;
             });
@@ -2386,7 +2387,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
             lastLimit = j;
           }
           alive = lastLimit === poolDates.length - 1;
-          var clearAge = lastLimit - peakDay + 1;
+          var clearAge = lastLimit - breakDay + 1;
           mids.push({
             symbol: symbol, name: x.n, lb: lb,
             last_limit_date: poolDates[lastLimit],
@@ -6901,7 +6902,7 @@ function relayBreakCaseView(view) {
     });
     if (otherMax >= Number(leader[5] || 0)) return false;
     const breakDate = dates[bi];
-    const mids = activeAt(pos[leader[4]], 3)
+    const mids = activeAt(bi, 3)
       .filter(c => !leaderSyms.has(c.run[0]) && c.lb >= 3 && c.lb <= 4)
       .map(c => {
         const br = pos[c.run[4]] + 1;
