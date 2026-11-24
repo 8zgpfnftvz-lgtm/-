@@ -411,6 +411,16 @@ tbody tr:hover td .lnk{text-decoration:underline}
 .current-case-source{display:inline-flex;align-items:center;padding:5px 10px;border:1px solid var(--border);
   border-radius:8px;background:var(--soft);color:var(--muted);font-size:11px;text-decoration:none}
 .current-case-source:hover{border-color:var(--accent);color:var(--accent)}
+.db-eco{margin:10px 0 14px;padding:11px;border:1px solid var(--border);border-radius:13px;background:var(--card)}
+.db-eco-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.db-eco-head b{font-size:13px}
+.db-eco-head span{font-size:10px;color:var(--muted)}
+.db-eco-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:8px}
+.db-kpi{padding:7px 8px;border:1px solid var(--border);border-radius:9px;background:var(--soft)}
+.db-kpi span{display:block;font-size:9px;color:var(--muted)}
+.db-kpi b{display:block;font-size:13px;margin-top:2px}
+.db-kpi small{display:block;font-size:9px;color:var(--muted);line-height:1.35;margin-top:2px}
+.db-eco-line{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
 .relay-note{margin-top:7px;color:var(--muted);font-size:9.5px;line-height:1.5}
 #relayAuctionHint{margin:10px 0}
 .relay-auction-card{border:1px solid var(--border);border-left:4px solid #f59e0b;border-radius:12px;
@@ -602,6 +612,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
   .relay-sub{max-width:225px;font-size:10.5px}
   .relay-body{padding:8px 9px 10px}
   .relay-chain{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+  .db-eco-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .relay-step{padding:7px}
   .relay-step b{font-size:11px}
   .relay-auction-head{align-items:flex-start;flex-direction:column;gap:2px}
@@ -685,6 +696,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
 
 <section id="tab-overview">
   <div class="grid" id="stats"></div>
+  <div id="dbEcoPanel"></div>
 
   <h2>情绪周期（近30个交易日）</h2>
   <div class="legend" id="legend"></div>
@@ -3651,6 +3663,41 @@ const DABANKE_CACHE_KEY = "dabankeReviewDataV2";
 function dabankeDay(date) {
   return (DABANKE_DATA && DABANKE_DATA.days && DABANKE_DATA.days[date]) || null;
 }
+function dabankeCurrentDay() {
+  return DATA && DATA.meta ? dabankeDay(DATA.meta.date) : null;
+}
+function dabankeStockOf(symbol, date) {
+  const day = date ? dabankeDay(date) : dabankeCurrentDay();
+  return day && day.stocks ? day.stocks[symbol] || null : null;
+}
+function dabankePrimaryTheme(symbol, date) {
+  const stock = dabankeStockOf(symbol, date);
+  if (!stock) return "";
+  const reason = String(stock.reason || "");
+  const tags = (stock.activeThemes || []).map(x => Object.assign({}, x, {
+    reasonPos: reason.indexOf(String(x.name || ""))
+  })).sort((a, b) => {
+    if (a.reasonPos >= 0 && b.reasonPos < 0) return -1;
+    if (b.reasonPos >= 0 && a.reasonPos < 0) return 1;
+    if (a.reasonPos >= 0 && b.reasonPos >= 0 && a.reasonPos !== b.reasonPos)
+      return a.reasonPos - b.reasonPos;
+    return Number(b.sealedStocks || 0) - Number(a.sealedStocks || 0) ||
+      Number(b.activeStocks || 0) - Number(a.activeStocks || 0) ||
+      String(a.name || "").localeCompare(String(b.name || ""), "zh");
+  });
+  return tags.length ? String(tags[0].name || "") : String(stock.theme || "");
+}
+function dabankeLayerMap(date) {
+  const day = date ? dabankeDay(date) : dabankeCurrentDay();
+  const out = {};
+  ((day && day.layers) || []).forEach(x => { out[x.name] = x; });
+  return out;
+}
+function dabankePatternsFor(symbol, date) {
+  const day = date ? dabankeDay(date) : dabankeCurrentDay();
+  return ((day && day.patterns) || []).filter(x =>
+    (x.stocks || []).some(s => s.symbol === symbol)).map(x => x.name);
+}
 async function loadDabankeData(force) {
   if (DABANKE_LOADING) return DABANKE_LOADING;
   try {
@@ -3747,6 +3794,8 @@ const GENE = window.__GENE__ || {};
 const KPL_THEME_MAP = window.__KPL_THEMES__ || { stocks: {} };
 function marketThemeOf(row) {
   const symbol = row && (row.symbol || row.sym);
+  const dbTheme = symbol && dabankePrimaryTheme(symbol);
+  if (dbTheme) return dbTheme;
   const hit = symbol && KPL_THEME_MAP.stocks && KPL_THEME_MAP.stocks[symbol];
   return (hit && hit.theme) || (row && (row.bk || row.hybk || row.industry)) || "其他";
 }
@@ -3825,6 +3874,7 @@ function selectNodeTickets(zt, anchorTheme, limit) {
     const fbt = Number(x.fbt || 999999);
     const zbc = Number(x.zbc || 0);
     const hs = Number(x.hs || 0);
+    const db = dabankeStockOf(x.symbol);
     const fundRatio = Number(x.fund || 0) && Number(x.ltsz || 0)
       ? Number(x.fund) / Number(x.ltsz) * 100 : 0;
     let score = 0;
@@ -3841,9 +3891,12 @@ function selectNodeTickets(zt, anchorTheme, limit) {
     score -= zbc * 0.8;
     passed.push(Object.assign({}, x, {
       theme, themeN, histPeak, price, freeCap: cap, score, watchOnly: !!x.yizi,
+      dbRank: db ? (Number(db.rank) || null) : null,
       ticketReason: (x.yizi ? "一字·待开板换手 · " : "") +
         theme + themeN + "只 · " + (zbc ? "炸" + zbc + "次" : "一次封") +
-        " · 首封" + hhmm(fbt) + " · 换手" + num(hs, 1) + "%"
+        " · 首封" + hhmm(fbt) + " · 换手" + num(hs, 1) + "%" +
+        (db && db.rank ? " · 人气" + db.rank : "") +
+        (db && db.tenDayBoards ? " · 10日" + db.tenDayBoards + "板" : "")
     }));
   });
   function rank(a, b) {
@@ -3913,13 +3966,38 @@ function relayHeightLabel(rows) {
 }
 function sectorCell(row) {
   const hit = row && KPL_THEME_MAP.stocks && KPL_THEME_MAP.stocks[row.symbol || row.sym];
+  const db = row && dabankeStockOf(row.symbol || row.sym);
   const theme = marketThemeOf(row);
   const industry = String((row && (row.bk || row.industry)) || "").trim();
-  if (hit && hit.theme && industry && hit.theme !== industry) {
-    return '<span class="sector-theme-main">' + esc(hit.theme) +
+  const mappedTheme = (db && dabankePrimaryTheme(row.symbol || row.sym)) || (hit && hit.theme) || "";
+  if (mappedTheme && industry && mappedTheme !== industry) {
+    return '<span class="sector-theme-main">' + esc(mappedTheme) +
       '</span><span class="sector-industry">行业 ' + esc(industry) + "</span>";
   }
   return esc(theme || "-");
+}
+function dabankeStockTags(symbol, compact) {
+  const d = dabankeStockOf(symbol);
+  if (!d) return '<span class="tag">待同步</span>';
+  const tags = [];
+  const patterns = dabankePatternsFor(symbol);
+  if (patterns.length) tags.push(patterns[0]);
+  if (d.performance) tags.push(d.performance);
+  if (d.rank) tags.push("人气" + d.rank);
+  if (d.tenDayBoards) tags.push("10日" + d.tenDayBoards + "板");
+  if (d.openCount) tags.push("开" + d.openCount + "次");
+  if (d.newHigh60) tags.push("60日新高");
+  if (!tags.length) tags.push(d.statusText || "已接入");
+  return [...new Set(tags)].slice(0, compact ? 3 : 6).map((x, i) =>
+    '<span class="tag ' + (i === 0 && /一字|秒板|回封|封板/.test(x) ? "ok" :
+      /炸板|未晋级/.test(x) ? "bad" : "") + '">' + esc(x) + "</span>").join("");
+}
+function dabankeLayerText(names) {
+  const layers = dabankeLayerMap();
+  return (names || []).map(name => {
+    const x = layers[name];
+    return x ? name + " " + x.rate + "（" + x.passed + "/" + x.total + "）" : "";
+  }).filter(Boolean).join(" · ");
 }
 const geneOf = s => GENE[s] || null;
 function geneTag(s) {
@@ -5073,7 +5151,9 @@ async function loadAuction() {
       ? "中位未出清：" + nodeNow.midAlive.slice(0, 5)
         .map(x => x.name + x.lb + "板").join("、")
       : (nodeNow.clearOffset !== null && nodeNow.clearOffset <= 2
-        ? "中位快速出清" : "中位已出清")) + " · " + nodeNow.gateText)
+        ? "中位快速出清" : "中位已出清")) + " · " + nodeNow.gateText +
+      (dabankeLayerText(["1进2", "2板以上晋级"])
+        ? " · " + dabankeLayerText(["1进2", "2板以上晋级"]) : ""))
     : cycleCardSub(midSummary);
   cardBox.innerHTML =
     card("情绪锚定判定", dec.verdict, "锚定池 " + ANC.length + " 只；今日反馈 " + dec.total +
@@ -5678,6 +5758,8 @@ function renderTrade() {
     { key: "expect", label: "预期", left: true, render: r =>
         '<span class="tag ' + (/3进4|高度板/.test(r.expect || "") ? "hi" : "ok") + '">' +
           esc(r.expect || tradeExpectation(r)) + "</span>" },
+    { key: "db_status", label: "打板客状态", left: true, render: r =>
+        dabankeStockTags(r.symbol, true) },
     { key: "auc_lv", label: "是否符合预期", left: true, render: r => {
         const lv = tradeAuctionStatus(r);
         const tone = lv === "超预期" || lv === "符合" ? "ok" :
@@ -6097,8 +6179,53 @@ async function loadMarketTurnover() {
   }
 }
 
+function renderDabankeEcoPanel() {
+  const host = document.getElementById("dbEcoPanel");
+  if (!host) return;
+  const day = dabankeCurrentDay();
+  if (!day || !day.market || !day.layers) {
+    host.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+  host.hidden = false;
+  const eco = day.market.ecosystem || day.market.limit || {};
+  const wanted = [
+    ["is-height", "最高板"],
+    ["is-sealed", "当日封板"],
+    ["is-first-board", "首板封住"],
+    ["is-one-to-two", "1进2"],
+    ["is-higher", "2板以上晋级"],
+  ];
+  const cards = wanted.map(([key, fallback]) => {
+    const x = eco[key] || {};
+    return '<div class="db-kpi"><span>' + esc(x.label || fallback) + '</span><b>' +
+      esc(x.value || "—") + '</b><small>' + esc(x.detail || "") + '</small></div>';
+  }).join("");
+  const breadth = day.market.breadthTotals || {};
+  cards += '<div class="db-kpi"><span>红盘率</span><b>' +
+    esc((breadth.rate && breadth.rate.value) || "—") + '</b><small>全市场上涨/下跌分布</small></div>';
+  const turnover = day.market.turnover || {};
+  const t5 = ((turnover.comparisons || []).find(x => /5日/.test(x.label)) || {});
+  cards += '<div class="db-kpi"><span>量能对比</span><b>' +
+    esc(turnover.value || "—") + '</b><small>较5日均量 ' + esc(t5.value || "—") + '</small></div>';
+  const themes = (day.themes || []).slice()
+    .sort((a, b) => (b.sealedStocks || 0) - (a.sealedStocks || 0)).slice(0, 3)
+    .map(x => '<span class="tag ok">' + esc(x.name + " · 封板" + x.sealedStocks +
+      " · 最高" + x.maxBoard + "板") + "</span>").join("");
+  const layers = (day.layers || []).map(x =>
+    '<span class="tag">' + esc(x.name + " " + x.rate + "（" + x.passed + "/" + x.total + "）") +
+    "</span>").join("");
+  host.innerHTML = '<div class="db-eco"><div class="db-eco-head"><b>打板客 · 市场生态</b><span>' +
+    esc(day.date + " · " + (day.market.state || "收盘") + " · 数据已接入") + '</span></div>' +
+    '<div class="db-eco-grid">' + cards + '</div>' +
+    '<div class="db-eco-line"><b class="k">分层晋级：</b>' + layers + '</div>' +
+    '<div class="db-eco-line"><b class="k">活跃题材：</b>' + themes + '</div></div>';
+}
+
 /* ---------- 各页渲染 ---------- */
 function renderOverview() {
+  renderDabankeEcoPanel();
   const m = DATA.meta, em = DATA.emotion, last = em[em.length - 1] || {};
   const ladders = sectorLadders((DATA.anchor && DATA.anchor.pool) || []);
   const full = ladders.filter(r => r.complete);
@@ -6202,6 +6329,10 @@ function renderOverview() {
 function renderReviewDashboard() {
   if (!DATA) return;
   const m = DATA.market || {}, cyc = DATA.cycle || {};
+  const dbDay = dabankeCurrentDay();
+  const dbLayers = dabankeLayerMap();
+  const dbSealRate = dbDay && dbDay.market && dbDay.market.ecosystem &&
+    dbDay.market.ecosystem["is-sealed"] ? dbDay.market.ecosystem["is-sealed"].detail : "";
   const currentCase = currentBreakNodeView();
   const currentNodeLeaders = currentCase && currentCase.leaders
     ? currentCase.leaders.map(x => x.name + x.lb + "板").join("、") : "";
@@ -6243,7 +6374,8 @@ function renderReviewDashboard() {
       (highAvg === null ? "" : " · 均涨 " + pct(highAvg, 2))),
     status("3. 正反馈", valid(m.prev_zt_avg) && m.prev_zt_avg > 0 ? "强" : (valid(m.prev_zt_avg) && m.prev_zt_avg < 0 ? "弱" : "中性"),
       "≥3板 " + high3.length + "只 · 最高 " + maxBoardNow + "板" + (maxNames ? "（" + maxNames + "）" : ""),
-      "前高龙头保留 " + highHeld.length + "/" + highLeaders.length),
+      "前高龙头保留 " + highHeld.length + "/" + highLeaders.length +
+      (dbSealRate ? " · " + dbSealRate : "")),
     status("4. 题材强弱", (m.strong_sectors || []).length >= 3 ? "强" : ((m.strong_sectors || []).length ? "中性" : "弱"),
       (m.strong_sectors || []).slice(0, 3).map(x => x.bk + " " + x.n + "家").join("；") || "没有3家以上涨停的强题材"),
     status("5. 情绪强弱", upRatio >= 0.5 ? "强" : (upRatio >= 0.35 ? "中性" : "弱"),
@@ -6287,6 +6419,14 @@ function renderReviewDashboard() {
       esc(currentNodeMid) + '</b></div>' +
     '<div class="review-cycle-row"><span>市场最高板</span><b>' +
       esc(currentCase ? relayHeightLabel(currentCase.heightRows || []) : "-") + '</b></div>' +
+    '<div class="review-cycle-row"><span>1进2 / 2板+</span><b>' +
+      esc([dbLayers["1进2"], dbLayers["2板以上晋级"]].filter(Boolean)
+        .map(x => x.rate + "（" + x.passed + "/" + x.total + "）").join(" / ") || "-") +
+      '</b></div>' +
+    '<div class="review-cycle-row"><span>3进4 / 5进6</span><b>' +
+      esc([dbLayers["3进4"], dbLayers["5进6"]].filter(Boolean)
+        .map(x => x.rate + "（" + x.passed + "/" + x.total + "）").join(" / ") || "-") +
+      '</b></div>' +
     '<div class="review-cycle-row"><span>一字高标排除</span><b>' + int(cyc.excluded_one_word || 0) + '只</b></div>';
   let execTone = "warn", execTitle = "等待9:25复核", execText = "当前只有收盘预案，不能直接开仓；9:25根据情绪锚定池强弱决定。";
   if (gate === "red" || /退潮/.test(cyc.state || "")) {
@@ -7350,6 +7490,11 @@ function shortCnDate(date) {
   return m ? Number(m[1]) + "月" + Number(m[2]) + "日" : String(date || "-");
 }
 function stockThemeLabel(symbol, fallback) {
+  const db = dabankeStockOf(symbol);
+  if (db && db.theme) {
+    const primary = dabankePrimaryTheme(symbol) || db.theme;
+    return primary + (db.reason && db.reason !== primary ? " · " + db.reason : "");
+  }
   const hit = symbol && KPL_THEME_MAP.stocks && KPL_THEME_MAP.stocks[symbol];
   if (hit) {
     const main = String(hit.theme || "").trim();
@@ -7876,6 +8021,7 @@ const ZTCOLS = [
   { key: "fbt", label: "首封", num: true, sortable: true, sortDir: 1, render: r => hhmm(r.fbt) },
   { key: "fund", label: "封单", num: true, sortable: true, render: r => money(r.fund) },
   { key: "bk", label: "板块 / 题材", left: true, render: sectorCell },
+  { key: "db_tag", label: "封板质量", left: true, render: r => dabankeStockTags(r.symbol, true) },
   { key: "hs", label: "换手%", num: true, sortable: true, render: r => num(r.hs) },
   { key: "gene", label: "股性", num: true, sortable: true, sortVal: r => (geneOf(r.symbol) || [0])[0], render: r => geneTag(r.symbol) },
   { key: "ltsz", label: "流通(亿)", num: true, sortable: true, render: r => yi(r.ltsz) },
@@ -7904,6 +8050,15 @@ function renderM1() {
   const levels = Object.keys(groups).map(Number).sort((a, b) => b - a);
 
   let html = "";
+  const dbDay = dabankeCurrentDay();
+  if (dbDay && dbDay.layers && dbDay.layers.length) {
+    html += "<h3>打板客 · 分层晋级强度（" + esc(dbDay.date) + "）</h3>" +
+      '<div class="db-eco"><div class="db-eco-line">' +
+      dbDay.layers.map(x => '<span class="tag ' +
+        (x.rate === "0%" ? "bad" : (x.passed > 0 ? "ok" : "")) + '">' +
+        esc(x.name + " " + x.rate + "（" + x.passed + "/" + x.total + "）") +
+        "</span>").join("") + '</div></div>';
+  }
   if (lad.length) {
     html += "<h3>连板晋级率（" + esc(DATA.anchor.date || "-") + "，按层级分类）</h3>" +
       "<div class='panel'><table id='t_ladder'></table></div>";
@@ -8073,6 +8228,7 @@ const FBCOLS = [
   { key: "ma10", label: "MA10", num: true, render: r => num(r.ma10) },
   { key: "pos60", label: "距60日高", num: true, cls: () => "down", render: r => num(r.pos60, 1) + "%" },
   { key: "industry", label: "行业", left: true },
+  { key: "db_tag", label: "打板客标签", left: true, render: r => dabankeStockTags(r.symbol, true) },
   { key: "sector_zt", label: "同板块涨停", num: true, render: r => r.sector_zt === null || r.sector_zt === undefined ? "-" : r.sector_zt + " 只" },
   { key: "low_pos", label: "低位", num: true, render: r => r.low_pos ? "是" : "否" },
   { key: "plan_buy", label: "买入参考", num: true, render: r => num(r.plan_buy) },
@@ -8104,6 +8260,7 @@ const ROLCOLS = [
   { key: "close", label: "当日收盘价", num: true, render: r => num(r.close) },
   { key: "price", label: "现价", num: true, render: r => r.price ? num(r.price) : "-" },
   { key: "pct", label: "今日涨跌", num: true, cls: r => cls(r.pct), render: r => r.pct === null || r.pct === undefined ? "-" : pct(r.pct) },
+  { key: "db_tag", label: "打板客标签", left: true, render: r => dabankeStockTags(r.symbol, true) },
   { key: "ma", label: "均线趋势", left: true, render: r =>
       (r.ma5_slope === null || r.ma5_slope === undefined) ? '<span class="tag">-</span>'
         : '<span class="tag ok">5日 ' + pct(r.ma5_slope, 2) + "</span> " +
@@ -8167,6 +8324,7 @@ const WPCOLS = [
   { key: "reason", label: "理由", left: true, render: r => '<span class="k">' + esc(r.reason || "") + "</span>" },
   { key: "close", label: "现价", num: true, render: r => r.close ? num(r.close) : "-" },
   { key: "pct", label: "今日涨跌", num: true, cls: r => cls(r.pct), render: r => r.pct === null || r.pct === undefined ? "-" : pct(r.pct) },
+  { key: "db_tag", label: "打板客标签", left: true, render: r => dabankeStockTags(r.sym || r.symbol, true) },
   { key: "ts", label: "加入时间", num: true, render: r => new Date(r.ts).toLocaleString("zh-CN", { hour12: false }).slice(5, 16) },
   { key: "act", label: "操作", left: true, render: r =>
       '<button type="button" class="wpDel" data-sym="' + r.sym + '">删除</button>' },
@@ -8241,6 +8399,7 @@ const ARCCOLS = [
   { key: "flat_days", label: "底部平台", num: true, sortable: true, render: r => num(r.flat_days, 0) + "日" },
   { key: "low_step", label: "低点抬高", num: true, sortable: true, cls: () => "up", render: r => pct(r.low_step, 2) },
   { key: "bk", label: "板块 / 题材", left: true, render: sectorCell },
+  { key: "db_tag", label: "打板客标签", left: true, render: r => dabankeStockTags(r.symbol, true) },
   { key: "exec_window", label: "执行窗口", left: true, render: () => '<span class="tag">14:50–14:57</span>' },
 ];
 const ARCWATCHCOLS = [
@@ -8416,6 +8575,7 @@ const MONCOLS = [
   { key: "fbt", label: "首封", num: true, sortable: true, sortDir: 1, render: r => hhmm(r.fbt) },
   { key: "fund", label: "封单", num: true, sortable: true, render: r => money(r.fund) },
   { key: "bk", label: "板块 / 题材", left: true, render: sectorCell },
+  { key: "db_tag", label: "打板客标签", left: true, render: r => dabankeStockTags(r.symbol, true) },
   { key: "hs", label: "换手%", num: true, sortable: true, render: r => num(r.hs) },
   { key: "gene", label: "股性", num: true, sortable: true, sortVal: r => (geneOf(r.symbol) || [0])[0], render: r => geneTag(r.symbol) },
   { key: "bigDate", label: "启动首板日", left: true },
@@ -8440,6 +8600,7 @@ const VRCOLS = [
   { key: "vol_ratio", label: "今量/昨量", num: true, sortable: true, render: r => num(r.vol_ratio, 2) + "×" },
   { key: "low_step", label: "底部抬高", num: true, sortable: true, cls: () => "up", render: r => pct(r.low_step, 2) },
   { key: "bk", label: "板块 / 题材", left: true, render: sectorCell },
+  { key: "db_tag", label: "打板客标签", left: true, render: r => dabankeStockTags(r.symbol, true) },
 ];
 
 const MONITOR_TREND_KEY = "monitorTrendV1";
@@ -10192,6 +10353,9 @@ load().then(() => {
   aucAutoTick();
   loadDabankeData().then(() => {
     try {
+      if (!$("#tab-overview").hidden) renderOverview();
+      if (!$("#tab-m1").hidden) renderM1();
+      if (!$("#tab-trade").hidden) renderTrade();
       if (!$("#tab-auction").hidden) safeLoadAuction();
       if (!$("#tab-op").hidden) renderLeaderRelay();
     } catch (e) { }
