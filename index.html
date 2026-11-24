@@ -363,6 +363,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
 .relay-panel:not([open]) .relay-fold-hint::after{content:"展开"}
 .relay-body{padding:10px 14px 14px;border-top:1px solid var(--border)}
 .relay-chain{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.relay-chain > .current-case{grid-column:1 / -1}
 .relay-step{border:1px solid var(--border);border-radius:11px;padding:8px 9px;background:var(--soft);min-width:0}
 .relay-step span{display:block;font-size:9px;color:var(--muted);letter-spacing:.7px}
 .relay-step b{display:block;font-size:12px;margin-top:2px;line-height:1.35}
@@ -6198,7 +6199,9 @@ function renderReviewDashboard() {
   const highAvg = highPcts.length ? highPcts.reduce((a, b) => a + b, 0) / highPcts.length : null;
   const ztNow = (DATA.anchor && DATA.anchor.pool || []).filter(x => x.group === "涨停");
   const high3 = ztNow.filter(x => (x.lbc || 1) >= 3);
-  const maxNames = high3.slice().sort((a, b) => (b.lbc || 0) - (a.lbc || 0)).slice(0, 2)
+  const maxBoardNow = high3.reduce((n, x) => Math.max(n, Number(x.lbc || 1)), 0);
+  const maxNames = high3.filter(x => Number(x.lbc || 1) === maxBoardNow)
+    .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999)).slice(0, 3)
     .map(x => esc(x.name || "") + "(" + (x.lbc || 1) + "板)").join("、");
   const idx = m.indexes || [];
   const idxAvg = valid(m.index_avg) ? Number(m.index_avg) : null;
@@ -6213,7 +6216,7 @@ function renderReviewDashboard() {
       "高位断板 " + highBreak + "/" + highLeaders.length +
       (highAvg === null ? "" : " · 均涨 " + pct(highAvg, 2))),
     status("3. 正反馈", valid(m.prev_zt_avg) && m.prev_zt_avg > 0 ? "强" : (valid(m.prev_zt_avg) && m.prev_zt_avg < 0 ? "弱" : "中性"),
-      "≥3板 " + high3.length + "只 · 最高 " + int(m.max_lb) + "板" + (maxNames ? "（" + maxNames + "）" : ""),
+      "≥3板 " + high3.length + "只 · 最高 " + maxBoardNow + "板" + (maxNames ? "（" + maxNames + "）" : ""),
       "前高龙头保留 " + highHeld.length + "/" + highLeaders.length),
     status("4. 题材强弱", (m.strong_sectors || []).length >= 3 ? "强" : ((m.strong_sectors || []).length ? "中性" : "弱"),
       (m.strong_sectors || []).slice(0, 3).map(x => x.bk + " " + x.n + "家").join("；") || "没有3家以上涨停的强题材"),
@@ -6256,8 +6259,8 @@ function renderReviewDashboard() {
         (cyc.break_age === null || cyc.break_age === undefined ? "-" : cyc.break_age + "日")) + '</b></div>' +
     '<div class="review-cycle-row"><span>中位出清</span><b id="reviewMidClear">' +
       esc(currentNodeMid) + '</b></div>' +
-    '<div class="review-cycle-row"><span>当前高度</span><b>' +
-      esc(currentCase ? currentCase.currentMax + "板" : "-") + '</b></div>' +
+    '<div class="review-cycle-row"><span>市场最高板</span><b>' +
+      esc(currentCase ? relayHeightLabel(currentCase.heightRows || []) : "-") + '</b></div>' +
     '<div class="review-cycle-row"><span>一字高标排除</span><b>' + int(cyc.excluded_one_word || 0) + '只</b></div>';
   let execTone = "warn", execTitle = "等待9:25复核", execText = "当前只有收盘预案，不能直接开仓；9:25根据情绪锚定池强弱决定。";
   if (gate === "red" || /退潮/.test(cyc.state || "")) {
@@ -7336,6 +7339,12 @@ function currentCaseCardHtml(v) {
   const sourceDataBadge = sourceDay
     ? '<span class="tag ok">打板客数据已接入</span>'
     : '<span class="tag">打板客数据待同步</span>';
+  const liveMax = pool.reduce((n, x) => Math.max(n, Number(x.lbc || 1)), 0);
+  const marketHeightRows = (v.heightRows && v.heightRows.length)
+    ? v.heightRows
+    : pool.filter(x => !x.group || x.group === "涨停")
+      .filter(x => Number(x.lbc || 1) === liveMax);
+  const marketHeightText = relayHeightLabel(marketHeightRows);
   const aliveSet = {};
   (v.midAlive || []).forEach(x => { aliveSet[x.symbol] = 1; });
   const mids = (v.mids || []).slice().sort((a, b) => Number(b.lb || 0) - Number(a.lb || 0));
@@ -7403,6 +7412,7 @@ function currentCaseCardHtml(v) {
       '<div class="current-case-meta">' + badge +
         sourceDataBadge +
         '<span class="tag">' + leader.lb + '板</span>' +
+        '<span class="tag">市场最高板 · ' + esc(marketHeightText) + '</span>' +
         '<span class="k">' + esc(stockThemeLabel(leader.symbol, leader.theme || "")) + '</span>' +
       '</div>' +
     '</div>' +
@@ -7442,10 +7452,14 @@ function renderLeaderRelay() {
   const chain = $("#relayChain");
   const conclusion = $("#relayConclusion");
   const hint = $("#relayAuctionHint");
+  const relayTable = $("#t_relay_candidates");
+  const relayPanel = relayTable ? relayTable.closest(".panel") : null;
   if (!badge || !chain || !conclusion) return;
   const view = leaderRelayView();
   const cross = leaderCrossView();
   if (!view) {
+    conclusion.hidden = false;
+    if (relayPanel) relayPanel.hidden = false;
     const exec = nodeExecutionView();
     if (!exec) {
       badge.textContent = "暂无数据";
@@ -7537,55 +7551,20 @@ function renderLeaderRelay() {
       '</small></div>' +
     '<div class="relay-step ' + (heightRows.length ? "done" : "muted") +
       '"><span>02 · 市场最高板</span><b>' + esc(heightText) +
-      '</b><small>先看市场最高板，再看下方节点候选</small></div>' +
+      '</b><small>只取当前最高板代表</small></div>' +
     '<div class="relay-step ' + (nodeTicketRows.length ? "done" : "muted") +
-      '"><span>03 · 推荐节点票（2板）</span><b>' + esc(nodeTicketText) +
+      '"><span>03 · 推荐节点票</span><b>' + esc(nodeTicketText) +
       '</b><small>' + (currentNode && currentNode.offset >= 3 ? "新周期节点票" : "补涨节点票") +
-      '，与接力身位分开</small></div>' +
+      '</small></div>' +
     '<div class="relay-step ' + (view.diffusion.length ? "done" : "muted") +
-      '"><span>04 · 题材扩散</span><b>' + esc(diffText) + '</b><small>与当前接力候选：' +
+      '"><span>04 · 题材扩散</span><b>' + esc(diffText) + '</b><small>当前接力：' +
       esc(candText) + '</small></div>' +
     '<div class="relay-step ' + (currentNode && currentNode.midAlive.length ? "bad" : (view.node.cls || "muted")) +
-      '"><span>05 · 新空间/穿越确认</span><b>' + esc(currentNodeTitle) + '</b><small>' +
+      '"><span>05 · 下一步确认</span><b>' + esc(currentNodeTitle) + '</b><small>' +
       esc(crossText) + '</small></div>';
-  conclusion.className = "relay-conclusion " + (currentNode && currentNode.midAlive.length ? "bad" : view.node.cls);
-  conclusion.innerHTML = '<b>' + esc(currentNodeTitle) + '</b><br>' +
-    esc(currentNode ? currentNode.gateText : view.node.text) +
-    '<br><b>断板案例：</b>' + esc(caseView
-      ? caseView.kind + "；" + (caseView.reversal
-        ? "龙头断板后反包"
-        : (caseView.mids.some(m => m.active) ? "中位仍有活口" :
-          (caseView.clearOffset === null ? "中位样本待确认" : "中位最晚在D+" + caseView.clearOffset + "退出")))
-      : "暂无完整案例") +
-    '<br><b>穿越：</b>' + esc(crossText);
-  const rows = heightRows.slice(0, 1).map((x, i) => {
-    const theme = String(marketThemeOf(x) || x.bk || x.hybk || "其他").trim() || "其他";
-    return {
-      rank: i + 1, role: "当前市场最高板",
-      name: x.name, lb: Number(x.lbc || 1), unique: heightRows.length === 1,
-      theme, sectorN: Number((view.themeCount || {})[theme] || 0),
-      fbt: x.fbt, fund: x.fund, close: x.close, priority: 3
-    };
-  });
-  table("t_relay_candidates", rows, [
-    { key: "role", label: "接力位", left: true, render: r => '<span class="tag ' + (r.priority >= 3 ? "rec" : r.priority === 2 ? "hi" : "ok") + '">' + esc(r.role) + "</span>" },
-    { key: "name", label: "候选", left: true },
-    { key: "lb", label: "板数", num: true, render: r => r.lb + "板" },
-    { key: "unique", label: "同梯队", left: true, render: r =>
-        r.unique ? '<span class="tag ok">唯一</span>' : '<span class="tag">多票PK</span>' },
-    { key: "cross_state", label: "穿越状态", left: true, render: r => {
-        const cc = cross && cross.candidates.find(x => x.symbol === r.symbol);
-        if (!cc) return "-";
-        const cls = /穿越确认|破局确认/.test(cc.cross_state) ? "ok" :
-          (/失败|未穿越/.test(cc.cross_state) ? "bad" : "");
-        return '<span class="tag ' + cls + '">' + esc(cc.cross_state) + "</span>";
-      } },
-    { key: "theme", label: "实际题材", left: true },
-    { key: "sectorN", label: "同题材涨停", num: true, render: r => r.sectorN + "只" },
-    { key: "fbt", label: "首封", num: true, render: r => hhmm(r.fbt) },
-    { key: "fund", label: "封单", num: true, render: r => money(r.fund) },
-    { key: "close", label: "收盘", num: true, render: r => num(r.close) },
-  ], { sort: (a, b) => a.rank - b.rank, rowCls: r => r.priority >= 3 ? "rec" : "" });
+  conclusion.hidden = true;
+  conclusion.innerHTML = "";
+  if (relayPanel) relayPanel.hidden = true;
 
   if (hint) {
     hint.innerHTML = currentBreakNodeHtml();
