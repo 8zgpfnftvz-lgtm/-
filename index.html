@@ -159,6 +159,9 @@ tbody tr:hover{background:var(--soft)}
 .tag.bad{background:var(--fg);color:var(--card)}
 .tag.rec{background:#e08b00;color:#fff;font-weight:600}
 .tag.hi{background:#4a5568;color:#fff}
+.tag.mid-wait{font-size:9px;line-height:15px;padding:0 5px;margin-right:3px;font-weight:600}
+table.compact-tags .tag{font-size:9.5px;line-height:16px;padding:0 5px;margin-right:3px}
+table.compact-tags .tag.mid-wait{font-size:8.5px;line-height:14px;padding:0 4px}
 .sector-theme-main{display:block;font-size:11.5px;font-weight:700;color:var(--fg)}
 .sector-industry{display:block;font-size:9px;color:var(--muted);line-height:1.25;margin-top:1px}
 tr.rec td{background:rgba(224,139,0,.14)}
@@ -4066,6 +4069,7 @@ function table(id, rows, cols, opts) {
   opts = opts || {};
   const box = document.getElementById(id);
   if (!box) return;
+  box.classList.add("compact-tags");
   const q = (opts.filter || "").trim().toLowerCase();
   let data = rows;
   if (q) data = rows.filter(r => cols.map(c => r[c.key]).join(" ").toLowerCase().includes(q));
@@ -5225,7 +5229,7 @@ async function loadAuction() {
     { key: "lb", label: "前期最高板", num: true, render: r => r.lb + " 板" },
     { key: "relay_hint", label: "节点提示", left: true, render: r => {
         const hs = relayHintTags(r.symbol, r);
-        return hs.length ? hs.map(t => '<span class="tag">' + esc(t) + "</span>").join("") : "-";
+        return hs.length ? relayHintTagsHtml(hs) : "-";
       } },
     { key: "reason", label: "入选理由", left: true },
     { key: "drawdown", label: "距阶段高", num: true, render: r => r.drawdown === null ? "-" : pct(r.drawdown, 1) },
@@ -5262,7 +5266,7 @@ async function loadAuction() {
       sortVal: r => tbVal(auctionRow(r)), render: r => aucBan(r) },
     { key: "relay_hint", label: "节点提示", left: true, render: r => {
         const hs = relayHintTags(r.symbol, r);
-        return hs.length ? hs.map(t => '<span class="tag">' + esc(t) + "</span>").join("") : "-";
+        return hs.length ? relayHintTagsHtml(hs) : "-";
       } },
     { key: "kindLabel", label: "昨日类型", left: true },
     { key: "gene", label: "股性", num: true, sortable: true,
@@ -6850,14 +6854,19 @@ function leaderRelayView() {
     };
   });
   const oldBroken = oldFeedback.some(x => !x.held);
-  const cycleMids = (cycle.mid_members || []).filter(x => Number(x.lb || 0) === 3 || Number(x.lb || 0) === 4);
+  const liveBreak = currentBreakNodeView();
+  const cycleMids = liveBreak
+    ? (liveBreak.mids || [])
+    : (cycle.mid_members || []).filter(x => Number(x.lb || 0) === 3 || Number(x.lb || 0) === 4);
   const prevMidRows = cycleMids.length
     ? cycleMids.map(x => ({
         symbol: x.symbol, name: x.name, lb: Number(x.lb || 0),
         last_limit_date: x.last_limit_date, mid_cleared: !!x.mid_cleared
       }))
     : prevRows.filter(x => x.lb >= 3);
-  const midAlive = prevMidRows.filter(x => !!ztMap[x.symbol]);
+  const midAlive = liveBreak
+    ? (liveBreak.midAlive || [])
+    : prevMidRows.filter(x => !!ztMap[x.symbol]);
   const midCleared = prevMidRows.length > 0 && midAlive.length === 0;
   const marketNode = prevMax >= 5 && oldBroken;
   const currentMax = zt.reduce((n, x) => Math.max(n, boardCountAt(x, today)), 0);
@@ -6928,8 +6937,8 @@ function leaderRelayView() {
       cls: "wait", title: "5板及以上首阴·中位未完全出清",
       text: "旧高度龙已断板，但前一日3板以上中位仍有" + midAlive.length + "只涨停；节点未完成，谨慎接力。"
     };
-  } else if (zt.filter(x => Number(x.lbc || 1) === 3).length === 1) {
-    const onlyThree = zt.find(x => Number(x.lbc || 1) === 3);
+  } else if (zt.filter(x => boardCountAt(x, today) === 3).length === 1) {
+    const onlyThree = zt.find(x => boardCountAt(x, today) === 3);
     const breakAge = Number(cycle.break_age);
     node = {
       cls: "done", title: (breakAge >= 1 && breakAge <= 3 ? "中位快速出清" : "中位已出清") + "·2进3唯一",
@@ -6951,7 +6960,7 @@ function leaderRelayView() {
     marketNode, prevMidRows, midAlive, midCleared,
     source, anchor: cycleDragon,
     currentMax, heightRows, nodeTickets, themeCount,
-    iceThreeCount: zt.filter(x => Number(x.lbc || 1) === 3).length,
+    iceThreeCount: zt.filter(x => boardCountAt(x, today) === 3).length,
     candidates, diffusion, node
   };
 }
@@ -6970,13 +6979,18 @@ function relayHintTags(symbol, row) {
   if (!view) return out;
   const p = (row && row._p) || ((DATA && DATA.anchor && DATA.anchor.pool) || [])
     .find(x => x.symbol === symbol) || {};
-  const lb = Number((row && row.lb) || p.lbc || 0);
-  if ((view.prevMidRows || []).some(x => x.symbol === symbol) && !view.midCleared)
+  const lb = Number((row && row.lb) || boardCountAt(p, DATA && DATA.meta && DATA.meta.date) || 0);
+  const currentCase = currentBreakNodeView();
+  if (lb >= 3 && lb <= 4 && currentCase &&
+      (currentCase.mids || []).some(x => x.symbol === symbol) &&
+      (currentCase.midAlive || []).some(x => x.symbol === symbol))
     out.push("首阴中位·待出清");
   const cand = view.candidates.find(x => x.symbol === symbol);
   if (cand) {
     out.push("节点" + cand.lb + "进" + (cand.lb + 1));
     if (cand.unique) out.push("同梯队唯一");
+  } else if (lb === 2) {
+    out.push("节点票·2进3观察");
   }
   if (cross) {
     const cc = cross.candidates.find(x => x.symbol === symbol);
@@ -6987,12 +7001,18 @@ function relayHintTags(symbol, row) {
   const zt = ((DATA.anchor && DATA.anchor.pool) || []).filter(x => x.group === "涨停");
   const theme = String(marketThemeOf(p) || "其他").trim() || "其他";
   const same = zt.filter(x => (String(marketThemeOf(x) || "其他").trim() || "其他") === theme);
-  if (same.some(x => Number(x.lbc || 1) > lb) && lb >= 2) out.push("同题材有更高板");
-  if (lb === 2 && !same.some(x => Number(x.lbc || 1) === 1)) out.push("无下位首板联动");
+  if (same.some(x => boardCountAt(x, DATA.meta && DATA.meta.date) > lb) && lb >= 2)
+    out.push("同题材有更高板");
+  if (lb === 2 && !same.some(x => boardCountAt(x, DATA.meta && DATA.meta.date) === 1))
+    out.push("无下位首板联动");
   (p.relay_tags || []).forEach(x => out.push(x));
   const exec = nodeExecutionView();
   if (exec && exec.preferred && exec.preferred.symbol === symbol) out.push("本层级首选");
   return out;
+}
+function relayHintTagsHtml(tags) {
+  return (tags || []).map(t => '<span class="tag' +
+    (t === "首阴中位·待出清" ? " mid-wait bad" : "") + '">' + esc(t) + "</span>").join("");
 }
 
 const NODE_HISTORY_KEY = "nodeExecutionHistoryV1";
@@ -7122,22 +7142,34 @@ function threeMostText(view) {
 function nodeExecutionView() {
   if (!DATA) return null;
   const cyc = DATA.cycle || {};
-  const anchor = cyc.dragon || null;
+  const nodeNow = currentBreakNodeView();
+  const anchor = (nodeNow && nodeNow.leader) || cyc.dragon || null;
   const zt = ((DATA.anchor && DATA.anchor.pool) || []).filter(x => x.group === "涨停");
-  const two = zt.filter(x => Number(x.lbc || 1) === 2);
-  const three = zt.filter(x => Number(x.lbc || 1) === 3);
-  const mid3Total = Number(cyc.mid3_total || 0);
-  const mid4Total = Number(cyc.mid4_total || 0);
-  const mid3Left = Number(cyc.mid3_left || 0);
-  const mid4Left = Number(cyc.mid4_left || 0);
+  const two = zt.filter(x => boardCountAt(x, DATA.meta && DATA.meta.date) === 2);
+  const three = zt.filter(x => boardCountAt(x, DATA.meta && DATA.meta.date) === 3);
+  const mid3Total = nodeNow
+    ? (nodeNow.mids || []).filter(x => Number(x.lb || 0) === 3).length
+    : Number(cyc.mid3_total || 0);
+  const mid4Total = nodeNow
+    ? (nodeNow.mids || []).filter(x => Number(x.lb || 0) === 4).length
+    : Number(cyc.mid4_total || 0);
+  const mid3Left = nodeNow
+    ? (nodeNow.midAlive || []).filter(x => Number(x.lb || 0) === 3).length
+    : Number(cyc.mid3_left || 0);
+  const mid4Left = nodeNow
+    ? (nodeNow.midAlive || []).filter(x => Number(x.lb || 0) === 4).length
+    : Number(cyc.mid4_left || 0);
   const hasMid = mid3Total + mid4Total > 0;
-  const midCleared = hasMid && mid3Left === 0 && mid4Left === 0;
-  const breakAge = cyc.break_age === null || cyc.break_age === undefined
-    ? null : Number(cyc.break_age);
+  const midCleared = nodeNow ? (nodeNow.midAlive || []).length === 0 :
+    (hasMid && mid3Left === 0 && mid4Left === 0);
+  const breakAge = nodeNow
+    ? Number(nodeNow.offset || 0) + 1
+    : (cyc.break_age === null || cyc.break_age === undefined
+      ? null : Number(cyc.break_age));
   const phase = (DATA.meta && DATA.meta.phase) || "混沌";
   const anchorMeta = anchor ? ((DATA.anchor && DATA.anchor.leaders) || [])
     .find(x => x.symbol === anchor.symbol) : null;
-  const anchorTheme = String((anchorMeta && anchorMeta.bk) || "").trim();
+  const anchorTheme = String((anchor && anchor.theme) || (anchorMeta && anchorMeta.bk) || "").trim();
   const nodeTicketRec = selectNodeTickets(zt, anchorTheme, 3);
   const nodeTickets = nodeTicketRec.picks;
   const anchorNow = anchor ? zt.find(x => x.symbol === anchor.symbol) ||
@@ -7970,21 +8002,25 @@ function loadMoreLimitHistory() {
 
 function stockActionTag(r) {
   if (!r) return null;
-  const lb = Number(r.lbc || r.lb || 1);
+  const lb = boardCountAt(r, DATA && DATA.meta && DATA.meta.date);
   const exec = nodeExecutionView();
-  const relay = leaderRelayView();
+  const currentCase = currentBreakNodeView();
   if (lb === 1) {
     if (r.i2_global_rank === 1) return { text: "1进2首选", cls: "rec" };
     if (r.i2_global_rank === 2) return { text: "1进2次选", cls: "ok" };
     return { text: "1进2观察", cls: "" };
   }
   if (!exec) return { text: lb + "进" + (lb + 1) + "观察", cls: "" };
-  if (relay && !relay.midCleared &&
-      (relay.prevMidRows || []).some(x => x.symbol === r.symbol)) {
-    return { text: "首阴中位·待出清", cls: "bad" };
+  if (lb >= 3 && lb <= 4 && currentCase &&
+      (currentCase.mids || []).some(x => x.symbol === r.symbol) &&
+      (currentCase.midAlive || []).some(x => x.symbol === r.symbol)) {
+    return { text: "首阴中位·待出清", cls: "bad mid-wait" };
   }
   const candidate = (exec.candidates || []).find(x => x.symbol === r.symbol);
   if (lb === 2) {
+    if (currentCase && currentCase.highBlocked) {
+      return { text: "2进3观察", cls: "" };
+    }
     if (exec.layer === 3 && candidate) {
       return {
         text: exec.preferred && exec.preferred.symbol === r.symbol ? "2进3首选" : "2进3候选",
@@ -8016,7 +8052,7 @@ const ZTCOLS = [
   { key: "lbc", label: "几天几板", num: true, sortable: true, sortVal: tbVal, render: tbText },
   { key: "relay_hint", label: "节点提示", left: true, render: r => {
       const hs = relayHintTags(r.symbol, r);
-      return hs.length ? hs.map(t => '<span class="tag">' + esc(t) + "</span>").join("") : "-";
+      return hs.length ? relayHintTagsHtml(hs) : "-";
     } },
   { key: "fbt", label: "首封", num: true, sortable: true, sortDir: 1, render: r => hhmm(r.fbt) },
   { key: "fund", label: "封单", num: true, sortable: true, render: r => money(r.fund) },
