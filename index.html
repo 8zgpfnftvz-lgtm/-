@@ -4851,6 +4851,7 @@ function cycleMidSummary(items) {
   const cyc = (DATA && DATA.cycle) || {};
   const breakAge = cyc.break_age === null || cyc.break_age === undefined
     ? null : Number(cyc.break_age);
+  const anchor = cyc.dragon || null;
   const rows = cyclePoolRows(items);
   const members = cyc.mid_members || [];
   const nowBySym = {};
@@ -4858,33 +4859,41 @@ function cycleMidSummary(items) {
   const alive = members.filter(x => nowBySym[x.symbol]);
   const current3 = rows.filter(x => x.lb === 3);
   const current2 = rows.filter(x => x.lb === 2);
+  const currentMax = rows.reduce((m, x) => Math.max(m, Number(x.lb || 0)), 0);
+  const maxRows = rows.filter(x => x.lb === currentMax);
   const names = xs => xs.slice(0, 4).map(x => x.name).join("、") +
     (xs.length > 4 ? "等" + xs.length + "只" : "");
   const out = [];
 
-  if (members.length) {
+  if (!anchor || Number(anchor.lb || 0) < 5) {
+    out.push("没有5板以上市场级首阴节点");
+  } else if (cyc.dragon_active) {
+    out.push("龙头仍在延续，首阴节点未触发");
+  } else if (members.length) {
     if (!alive.length) {
       out.push(breakAge >= 1 && breakAge <= 3
-        ? "中位快速出清（首阴第" + breakAge + "日）"
-        : (breakAge > 3 ? "旧周期中位已出清（首阴第" + breakAge + "日）" : "中位已出清"));
+        ? anchor.name + "首阴第" + breakAge + "日 · 中位快速出清"
+        : (breakAge > 3 ? anchor.name + "首阴第" + breakAge + "日 · 旧周期中位已出清"
+          : anchor.name + "首阴 · 中位已出清"));
     } else {
       const alive3 = alive.filter(x => Number(x.lb || 0) === 3).length;
       const alive4 = alive.filter(x => Number(x.lb || 0) === 4).length;
-      out.push("中位未出清（三板仍封" + alive3 + "只、四板仍封" + alive4 + "只）");
+      out.push((breakAge ? anchor.name + "首阴第" + breakAge + "日 · " : "") +
+        "中位未出清（3板剩" + alive3 + "只、4板剩" + alive4 + "只）");
     }
   } else {
-    out.push("本轮历史中位无样本");
+    out.push(anchor.name + "断板日没有3/4板中位样本");
   }
 
-  if (current3.length === 1) {
-    out.push("今日2进3唯一：" + current3[0].name +
-      (current3[0].yizi ? "（一字）" : ""));
-  } else if (current3.length > 1) {
-    out.push("今日2进3：" + names(current3) + "，同梯队仍PK");
+  if (currentMax >= 3) {
+    out.push("当前最高" + currentMax + "板" + maxRows.length + "只" +
+      (maxRows.length <= 3 ? "：" + names(maxRows) : ""));
+  }
+  if (current3.length) {
+    out.push("3板" + current3.length + "只：" + names(current3) +
+      (current3.length === 1 ? "（2进3完成）" : "（仍在PK）"));
   } else if (current2.length) {
-    out.push("今日2板" + current2.length + "只：" + names(current2) + "，等待2进3");
-  } else {
-    out.push("今日暂无新的2进3身位");
+    out.push("2板" + current2.length + "只，等待2进3");
   }
   return out.join(" · ");
 }
@@ -5003,15 +5012,17 @@ function closeAutoTick() {
   }
 }
 setInterval(closeAutoTick, 60000);
-setTimeout(refreshCycleLive, 1200);
+setTimeout(refreshCycleLive, 2800);
 setInterval(refreshCycleLive, 60000);
 setTimeout(arcLiveAutoTick, 1800);
 setInterval(arcLiveAutoTick, 60000);
 setInterval(() => {
   try {
-    if (DATA && !$("#tab-overview").hidden) loadMarketTurnover();
+    if (DATA && !document.hidden && !$("#tab-overview").hidden) {
+      loadMarketTurnover();
+    }
   } catch (e) { }
-}, 30000);
+}, 15000);
 if (window.__PHONE_BUILD__) {
   const _cn = new Date();
   if (_cn.getHours() * 100 + _cn.getMinutes() >= 1505) _closeRefreshDay = snapToday();
@@ -5490,7 +5501,7 @@ function firstBoardQuality(r, allFirst) {
 }
 
 /* ---------- 同花顺大盘成交额 ---------- */
-const THS_TURNOVER_KEY = "thsMarketTurnoverV1";
+const THS_TURNOVER_KEY = "marketTurnoverV2";
 let _thsTurnoverBusy = false;
 
 function turnoverText(v) {
@@ -5507,16 +5518,32 @@ function renderMarketTurnover(data) {
   let sub = "较昨日基本持平", tone = "";
   if (diff > 0) { sub = "较昨日放量 " + turnoverText(diff); tone = "up"; }
   else if (diff < 0) { sub = "较昨日缩量 " + turnoverText(Math.abs(diff)); tone = "down"; }
+  const stamp = data.ts ? new Date(data.ts).toLocaleTimeString("zh-CN", {
+    hour12: false, hour: "2-digit", minute: "2-digit"
+  }) : "";
+  const source = data.source || "同花顺实时";
   box.innerHTML =
     '<div class="k">大盘成交额</div>' +
     '<div class="v ' + tone + '">' + turnoverText(data.amount) + '</div>' +
-    '<div class="k">' + sub + ' · ' + esc(data.day || "") + ' · 同花顺</div>';
+    '<div class="k">' + sub + ' · ' + esc(data.day || "") + ' · ' +
+      esc(source + (stamp ? " " + stamp : "")) + '</div>';
+}
+
+async function fetchWithTimeout(url, timeout) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout || 8000);
+  try {
+    const response = await fetch(url, { cache: "no-store", signal: ctrl.signal });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    return response;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function thsIndexAmounts(code) {
   const url = "https://d.10jqka.com.cn/v6/line/zs_" + code + "/01/last.js";
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) throw new Error("同花顺 HTTP " + response.status);
+  const response = await fetchWithTimeout(url, 8000);
   const text = await response.text();
   const a = text.indexOf("("), b = text.lastIndexOf(")");
   if (a < 0 || b <= a) throw new Error("同花顺数据格式异常");
@@ -5532,8 +5559,7 @@ async function thsIndexAmounts(code) {
 
 async function thsRealHeadAmount(code) {
   const url = "https://d.10jqka.com.cn/v6/realhead/zs_" + code + "/last.js";
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) throw new Error("同花顺实时 HTTP " + response.status);
+  const response = await fetchWithTimeout(url, 8000);
   const text = await response.text();
   const a = text.indexOf("("), b = text.lastIndexOf(")");
   if (a < 0 || b <= a) throw new Error("同花顺实时数据格式异常");
@@ -5549,31 +5575,39 @@ async function loadMarketTurnover() {
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem(THS_TURNOVER_KEY) || "null"); } catch (e) { }
   if (cached && cached.amount) renderMarketTurnover(cached);
-  if (cached && cached.ts && Date.now() - cached.ts < 30 * 1000) return;
+  if (cached && cached.ts && Date.now() - cached.ts < 15 * 1000) return;
   _thsTurnoverBusy = true;
   try {
+    const safe = p => p.catch(() => null);
     const [sh, sz, shLive, szLive] = await Promise.all([
-      thsIndexAmounts("1A0001"), thsIndexAmounts("399106"),
-      thsRealHeadAmount("1A0001"), thsRealHeadAmount("399106")
+      safe(thsIndexAmounts("1A0001")), safe(thsIndexAmounts("399106")),
+      safe(thsRealHeadAmount("1A0001")), safe(thsRealHeadAmount("399106"))
     ]);
-    const common = Object.keys(sh).filter(d => sz[d]).sort();
-    if (!common.length) throw new Error("同花顺缺少历史成交额");
-    const liveDay = shLive.day || szLive.day || common[common.length - 1];
+    const amount = (shLive && shLive.amount || 0) + (szLive && szLive.amount || 0);
+    if (!amount) throw new Error("实时成交额为空");
+    const common = Object.keys(sh || {}).filter(d => sz && sz[d]).sort();
+    const todayCode = snapToday().replace(/-/g, "");
+    const liveDay = (shLive && shLive.day) || (szLive && szLive.day) ||
+      (common.length ? common[common.length - 1] : todayCode);
     const before = common.filter(d => d < liveDay);
-    const prev = before.length ? before[before.length - 1] : common[common.length - 2];
-    if (!prev) throw new Error("同花顺缺少昨日成交额");
-    const day = liveDay || common[common.length - 1];
+    const prev = before.length ? before[before.length - 1] : "";
+    const prevAmount = prev ? sh[prev] + sz[prev] : (cached && cached.prevAmount || 0);
+    if (!prev) throw new Error("缺少上一交易日成交额");
+    const day = liveDay;
     const dayText = day.slice(0, 4) + "-" + day.slice(4, 6) + "-" + day.slice(6, 8);
     const prevText = prev.slice(0, 4) + "-" + prev.slice(4, 6) + "-" + prev.slice(6, 8);
     const data = {
       day: dayText, prevDay: prevText,
-      amount: shLive.amount + szLive.amount,
-      prevAmount: sh[prev] + sz[prev], ts: Date.now()
+      amount: amount,
+      prevAmount: prevAmount, ts: Date.now(),
+      source: "同花顺实时"
     };
     try { localStorage.setItem(THS_TURNOVER_KEY, JSON.stringify(data)); } catch (e) { }
     renderMarketTurnover(data);
   } catch (e) {
-    if (box && !cached) {
+    if (box && cached && cached.amount) {
+      box.innerHTML += '<div class="k down">刷新失败 · 当前为本地缓存</div>';
+    } else if (box && !cached) {
       box.innerHTML = '<div class="k">大盘成交额</div><div class="v">—</div>' +
         '<div class="k">同花顺数据暂时读取失败</div>';
     }
@@ -5599,7 +5633,11 @@ function renderOverview() {
       cls(last.prev_zt_avg)) +
     card("完整梯队题材", full.length + " 个",
       full.length ? full.map(r => r.bk).join("、") : "今天没有完整梯队", full.length ? "up" : "");
-  loadMarketTurnover();
+  try {
+    const cachedTurnover = JSON.parse(localStorage.getItem(THS_TURNOVER_KEY) || "null");
+    if (cachedTurnover && cachedTurnover.amount) renderMarketTurnover(cachedTurnover);
+  } catch (e) { }
+  setTimeout(loadMarketTurnover, 1200);
 
   /* 近 5 年实测结论（2021-10 ~ 2026-09，主板；不涉及 MACD/金叉） */
   $("#btStats").innerHTML =
@@ -8209,6 +8247,40 @@ function markPhone() {
   $("#progLog").textContent = "提示：收盘后（15:00 之后）点「更新数据」最准；关闭页面后数据存在手机本地，下次打开可直接看。";
 }
 
+function renderOpTab() {
+  renderReviewDashboard();
+  renderLeaderRelay();
+  renderLimitLifecycle();
+  annualCycleRender();
+  $("#opinion").innerHTML = mdToHtml(DATA.opinion || "");
+  sortableMdTables($("#opinion"));
+}
+
+function renderTabContent(tab) {
+  if (!DATA) return;
+  if (tab === "overview") {
+    renderOverview();
+    drawLegend();
+    drawChart();
+  } else if (tab === "m1") {
+    renderM1();
+  } else if (tab === "m2") {
+    renderM2();
+  } else if (tab === "monitor") {
+    renderMonitor();
+  } else if (tab === "watch") {
+    renderWatch();
+  } else if (tab === "trade") {
+    try { renderTrade(); } catch (e) { }
+    renderPlanReview().catch(() => { });
+  } else if (tab === "op") {
+    renderOpTab();
+  } else if (tab === "auction") {
+    safeLoadAuction();
+  }
+  try { applyFold(); } catch (e) { }
+}
+
 function applyData(payload) {
   DATA = payload;
   const m = DATA.meta;
@@ -8222,18 +8294,8 @@ function applyData(payload) {
     "</b> · " + m.kline + " 只个股 · " + m.days + " 个交易日数据 · 生成于 " + esc(m.generated);
   $("#foot").textContent = "天天板 · 数据：腾讯日K / 东方财富涨停池 · 仅供复盘，不构成投资建议" +
     (INLINE ? " · 静态快照" : "");
-  renderOverview(); renderM1(); renderM2(); renderReviewDashboard();
-  renderLeaderRelay(); renderLimitLifecycle(); annualCycleRender();
-  try { renderTrade(); } catch (e) { /* 交易页异常不影响其它页 */ }
-  try { renderPlanReview().catch(() => { }); } catch (e) { }
-  try { renderMonitor(); } catch (e) { /* 监控数据缺失时不影响其它页 */ }
-  try { loadArcRight(false).catch(() => { }); } catch (e) { }
-  try { renderWatch(); } catch (e) { /* 自选池异常不影响其它页 */ }
-  try { if (!$("#tab-auction").hidden) safeLoadAuction(); } catch (e) { }
-  try { applyFold(); } catch (e) { /* 折叠状态应用失败不影响其它功能 */ }
-  $("#opinion").innerHTML = mdToHtml(DATA.opinion);
-  sortableMdTables($("#opinion"));
-  drawLegend(); drawChart();
+  const activeTab = document.querySelector("#tabs button.on");
+  renderTabContent(activeTab ? activeTab.dataset.tab : "overview");
   // 把锚定池单独存一份，供第二个交易日早上的「竞价」页使用。
   // 关键：盘中跑到的是"当天不完整的池子"，绝不能覆盖上一交易日的完整池子，
   // 否则第二天早上的竞价判断会用错数据。只有「非当天」或「当天收盘后(15:05)」才存。
@@ -8564,22 +8626,8 @@ $("#tabs").addEventListener("click", e => {
   if (!b) return;
   [...$("#tabs").children].forEach(x => x.classList.toggle("on", x === b));
   ["auction", "overview", "m1", "m2", "monitor", "watch", "trade", "op"].forEach(t => { $("#tab-" + t).hidden = (t !== b.dataset.tab); });
-  if (b.dataset.tab === "overview") {
-    drawChart();
-    loadMarketTurnover();
-  }
-  if (b.dataset.tab === "auction") safeLoadAuction();
-  if (b.dataset.tab === "monitor") renderMonitor();
-  if (b.dataset.tab === "watch") { renderWatch(); }
+  renderTabContent(b.dataset.tab);
   if (b.dataset.tab === "op") requestAnimationFrame(scrollLimitToLatest);
-  if (b.dataset.tab === "trade") {
-    try { renderTrade(); } catch (e) { }
-    renderPlanReview().catch(e => {
-      const info = document.getElementById("revInfo");
-      if (info) info.textContent = "回验暂时失败：" + e.message;
-    });
-  }
-  applyFold();
 });
 
 $("#limitMore").addEventListener("click", loadMoreLimitHistory);
