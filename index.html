@@ -385,6 +385,31 @@ tbody tr:hover td .lnk{text-decoration:underline}
 .relay-case-line{margin-top:5px;color:var(--muted)}
 .relay-case-line b{color:var(--fg);font-weight:650}
 .relay-case-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+.current-case{border:1px solid var(--border);border-radius:14px;background:var(--card);overflow:hidden}
+.current-case-head{padding:11px 13px;background:var(--soft)}
+.current-case-title{font-size:14px;font-weight:800;line-height:1.5}
+.current-case-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px}
+.current-case-main{padding:12px 13px}
+.current-case-lede{font-size:12.5px;line-height:1.7;margin:0 0 10px}
+.current-case-table-wrap{border:1px solid var(--border);border-radius:10px;overflow:auto;background:var(--card);
+  -webkit-overflow-scrolling:touch;touch-action:pan-x pan-y}
+.current-case-table{width:100%;min-width:590px;border-collapse:collapse;font-size:11.5px}
+.current-case-table th{padding:7px 9px;text-align:left;color:var(--muted);font-size:10.5px;font-weight:600;
+  background:var(--soft);border-bottom:1px solid var(--border);white-space:nowrap}
+.current-case-table td{padding:8px 9px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.55}
+.current-case-table tr:last-child td{border-bottom:0}
+.current-case-theme{display:block;color:var(--accent2);font-size:10px;margin-top:2px}
+.current-case-height{font-weight:750;color:var(--up);white-space:nowrap}
+.current-case-date{white-space:nowrap}
+.current-case-conclusion{display:flex;align-items:flex-start;gap:8px;margin-top:10px;padding:8px 10px;
+  border:1px solid rgba(36,107,253,.18);border-radius:9px;background:rgba(36,107,253,.055);
+  font-size:11.5px;line-height:1.65}
+.current-case-conclusion b{color:var(--accent);flex:0 0 auto}
+.current-case-research{margin-top:8px;font-size:11px;line-height:1.65;color:var(--muted)}
+.current-case-foot{display:flex;gap:7px;padding:0 13px 12px;flex-wrap:wrap}
+.current-case-source{display:inline-flex;align-items:center;padding:5px 10px;border:1px solid var(--border);
+  border-radius:8px;background:var(--soft);color:var(--muted);font-size:11px;text-decoration:none}
+.current-case-source:hover{border-color:var(--accent);color:var(--accent)}
 .relay-note{margin-top:7px;color:var(--muted);font-size:9.5px;line-height:1.5}
 #relayAuctionHint{margin:10px 0}
 .relay-auction-card{border:1px solid var(--border);border-left:4px solid #f59e0b;border-radius:12px;
@@ -3818,6 +3843,19 @@ function selectNodeTickets(zt, anchorTheme, limit) {
     rejected, oneWord, oneWordPicks, mode
   };
 }
+function relayHeightLeader(rows) {
+  return (rows || []).slice().sort((a, b) =>
+    Number(a.fbt || 999999) - Number(b.fbt || 999999) ||
+    Number(a.zbc || 0) - Number(b.zbc || 0) ||
+    Number(b.fund || 0) - Number(a.fund || 0))[0] || null;
+}
+function relayHeightLabel(rows) {
+  const leader = relayHeightLeader(rows);
+  if (!leader) return "暂无";
+  const name = leader.name || leader.n || "未命名";
+  const lb = Number(leader.lbc || leader.lb || 1);
+  return name + lb + "板" + (rows.length > 1 ? " · 同梯" + rows.length + "只" : "");
+}
 function sectorCell(row) {
   const hit = row && KPL_THEME_MAP.stocks && KPL_THEME_MAP.stocks[row.symbol || row.sym];
   const theme = marketThemeOf(row);
@@ -7014,10 +7052,7 @@ function nodeExecutionHtml() {
       '</b> · ' + esc(view.preferred.lb + "板 · " + view.preferred.theme) +
       ' · 首封 ' + esc(hhmm(view.preferred.fbt)) + '</div>'
     : "";
-  const heightText = (view.heightRows || []).length
-    ? view.heightRows.map(x => esc(x.name) + " " + (x.lbc || 1) + "板" +
-        (x.yizi ? "（一字·只观察）" : "（首封" + hhmm(x.fbt) + "）")).join("、")
-    : "暂无";
+  const heightText = esc(relayHeightLabel(view.heightRows || []));
   const nodeTicketText = (view.nodeTickets || []).length
     ? view.nodeTickets.slice(0, 8).map(x => '<span class="tag ' + (x.yizi ? "hi" : "ok") + '">' +
         esc((x.pickRole || "") + " · " + x.name + " · " + x.theme +
@@ -7225,43 +7260,109 @@ function currentBreakNodeView(items) {
   });
 }
 
+function shortCnDate(date) {
+  const m = String(date || "").match(/^\d{4}-(\d{2})-(\d{2})$/);
+  return m ? Number(m[1]) + "月" + Number(m[2]) + "日" : String(date || "-");
+}
+function stockThemeLabel(symbol, fallback) {
+  const hit = symbol && KPL_THEME_MAP.stocks && KPL_THEME_MAP.stocks[symbol];
+  if (hit) {
+    const main = String(hit.theme || "").trim();
+    const concepts = String(hit.concepts || "").trim();
+    return (main && concepts ? main + " · " + concepts : main || concepts) || fallback || "其他";
+  }
+  const row = ((DATA && DATA.anchor && DATA.anchor.pool) || []).find(x => x.symbol === symbol);
+  return String((row && (marketThemeOf(row) || row.bk || row.hybk)) || fallback || "其他");
+}
+function currentCaseCardHtml(v) {
+  if (!v) return "";
+  const leader = v.leader || (v.leaders || [])[0];
+  if (!leader) return "";
+  const pool = ((DATA && DATA.anchor && DATA.anchor.pool) || []);
+  const poolMap = {};
+  pool.forEach(x => { poolMap[x.symbol] = x; });
+  const aliveSet = {};
+  (v.midAlive || []).forEach(x => { aliveSet[x.symbol] = 1; });
+  const mids = (v.mids || []).slice().sort((a, b) => Number(b.lb || 0) - Number(a.lb || 0));
+  const midSummary = mids.length
+    ? mids.slice(0, 6).map(x => x.name + x.lb + "板").join("、") +
+      (mids.length > 6 ? "等" + mids.length + "只" : "")
+    : "断板日没有3板、4板中位样本";
+  const others = (v.leaders || []).slice(1).map(x => x.name + x.lb + "板").join("、");
+  const kind = v.midAlive.length ? "中位仍在分歧" : (v.transfer ? "节点转移" :
+    (v.reversal ? "断板反包" : v.kind));
+  const badge = v.midAlive.length
+    ? '<span class="tag hi">中位未出清 · 仍在进行中</span>'
+    : '<span class="tag ' + (v.tone === "bad" ? "bad" : v.tone === "done" ? "ok" : "hi") + '">' +
+      esc(v.badge) + "</span>";
+  const rows = mids.map(m => {
+    const alive = !!aliveSet[m.symbol];
+    const live = poolMap[m.symbol];
+    const actual = alive ? "仍在连板"
+      : (m.break_date ? shortCnDate(m.break_date)
+        : (live && live.group && live.group !== "涨停" ? shortCnDate(v.today) : "待确认"));
+    const perf = alive ? "仍在" + m.lb + "板"
+      : ((live && live.today_pct !== null && live.today_pct !== undefined)
+        ? "第" + (Number(m.lb) + 1) + "板失败，" + pct(Number(live.today_pct), 2)
+        : "第" + (Number(m.lb) + 1) + "板失败");
+    return '<tr>' +
+      '<td><b>' + esc(m.name) + '</b><span class="current-case-theme">' +
+        esc(stockThemeLabel(m.symbol, m.theme || "")) + '</span></td>' +
+      '<td class="current-case-height">' + m.lb + '板</td>' +
+      '<td class="current-case-date">' + esc(actual) + '</td>' +
+      '<td>' + esc(perf) + '</td></tr>';
+  }).join("");
+  const nodeTags = (v.nodeTickets || []).map((x, i) =>
+    '<span class="tag ' + (x.yizi ? "hi" : "ok") + '">' +
+      esc((i + 1) + ". " + (x.pickRole || "") + " · " + x.name + " · " +
+        (x.theme || x.hybk || "其他") + (x.yizi ? " · 一字待开板换手" : " · 首封" + hhmm(x.fbt))) +
+    "</span>").join("");
+  const aliveCount = mids.filter(m => aliveSet[m.symbol]).length;
+  const brokenCount = Math.max(0, mids.length - aliveCount);
+  const conclusion = "高标断板 + " + (aliveCount ? "中位未快速出清" :
+    (v.clearOffset !== null && v.clearOffset <= 2 ? "中位快速出清" : "中位出清"));
+  const research = aliveCount
+    ? "研究点：中位没有快速出清时，旧周期仍在释放分歧，应继续等出清或等待更高辨识度的新节点。"
+    : "研究点：高标负反馈后，重点看断板日、D+1、D+2是否出现新的2板节点。";
+  const dayMax = Number(v.dayMax || v.currentMax || 0);
+  return '<article class="current-case">' +
+    '<div class="current-case-head">' +
+      '<div class="current-case-title">当前节点：' + esc(shortCnDate(v.leaderEnd)) + " " +
+        esc(leader.name) + '断板——' + esc(kind) + '</div>' +
+      '<div class="current-case-meta">' + badge +
+        '<span class="tag">打板客数据待同步</span>' +
+        '<span class="tag">' + leader.lb + '板</span>' +
+        '<span class="k">' + esc(stockThemeLabel(leader.symbol, leader.theme || "")) + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="current-case-main">' +
+      '<p class="current-case-lede">' + esc(shortCnDate(v.leaderEnd)) + "，" + esc(leader.name) +
+        Math.max(1, Number(leader.lb) - 1) + "进" + leader.lb + "成功，收盘形成" + leader.lb +
+        "板；当天中位梯队为" + esc(midSummary) + "。" +
+        (others ? "同日其他高标还有" + esc(others) + "。" : "") + '</p>' +
+      '<div class="current-case-table-wrap"><table class="current-case-table"><thead><tr>' +
+        '<th>股票</th><th>断板日高度</th><th>实际断板日期</th><th>断板表现</th>' +
+      '</tr></thead><tbody>' + (rows || '<tr><td colspan="4">断板日没有3板及以上中位票</td></tr>') +
+      '</tbody></table></div>' +
+      '<div class="current-case-conclusion"><b>结构判断</b><span>' +
+        esc(shortCnDate(v.breakDate)) + "，" + esc(leader.name) + leader.lb + "进" +
+        (Number(leader.lb) + 1) + '失败并断板；已有' + brokenCount + '只断板，仍有' +
+        aliveCount + '只保持连板。断板日最高板为' + dayMax + '板，前一日龙头为' + leader.lb +
+        '板。<br><b>结论：</b>' + esc(conclusion) + '。</span></div>' +
+      '<div class="current-case-research">' + esc(research) + '</div>' +
+      (nodeTags ? '<div class="current-case-research"><b>推荐节点票：</b></div>' +
+        '<div class="relay-case-chips">' + nodeTags + '</div>' : '') +
+    '</div>' +
+    '<div class="current-case-foot"><a class="current-case-source" target="_blank" rel="noopener noreferrer" href="' +
+      'https://www.dabanke.com/index-' + String(v.breakDate || "").replace(/-/g, "") +
+      '.html">数据来源 · 打板客网</a></div>' +
+    '</article>';
+}
+
 function currentBreakNodeHtml(items) {
   const v = currentBreakNodeView(items);
   if (!v) return "";
-  const leaders = (v.leaders || [v.leader]).filter(Boolean);
-  const aliveSet = {};
-  (v.midAlive || []).forEach(x => { aliveSet[x.symbol] = 1; });
-  const mids = v.mids.length
-    ? v.mids.map(x => esc(x.name) + x.lb + "板" +
-        (aliveSet[x.symbol] ? "（仍在连板）" : (x.break_date ? "（" + esc(x.break_date.slice(5)) + "断）" : ""))).join("、")
-    : "断板日无3/4板中位样本";
-  const heights = v.heightRows.length
-    ? v.heightRows.map(x => esc(x.name) + (x.lbc || 1) + "板" + (x.yizi ? "（一字）" : "")).join("、")
-    : "暂无";
-  const nodes = v.nodeTickets.length
-    ? v.nodeTickets.map((x, i) => '<span class="tag ' + (x.yizi ? "hi" : "ok") + '">' +
-        esc((i + 1) + ". " + (x.pickRole || "") + " · " + x.name + " · " + (x.theme || x.hybk || "其他") +
-          (x.yizi ? " · 一字·待开板换手" : " · 首封" + hhmm(x.fbt))) + "</span>").join("")
-    : '<span class="tag">今日暂无合格推荐节点票</span>';
-  const ticketNote = v.nodeTickets.length
-    ? "从" + v.nodeTicketStats.total + "只2板中筛出" + v.nodeTickets.length +
-      "只推荐" + (v.nodeTicketStats.oneWordPicks
-        ? "；一字共" + v.nodeTicketStats.oneWord + "只，只保留最强" + v.nodeTicketStats.oneWordPicks +
-          "只观察，其余继续展示同分支换手替代" : "") +
-      "；高价、大市值、旧高标及非最强分支不展示。"
-    : "已检查" + v.nodeTicketStats.total + "只2板，暂无同时通过题材、价格、市值、历史高度和封板质量筛选的标的。";
-  return '<div class="relay-auction-card">' +
-    '<div class="relay-auction-head"><b>当前断板节点 · ' +
-      esc(leaders.map(x => x.name + x.lb + "板").join("、")) + '</b><span>' +
-      esc(v.breakDate + " · " + v.stage) + '</span></div>' +
-    '<div class="relay-case-line"><b>节点状态：</b>' +
-      esc(v.midAlive.length ? "首阴形成，中位未出清" : (v.clearOffset !== null && v.clearOffset <= 2 ? "首阴形成，中位快速出清" : "首阴形成，中位已出清")) +
-      '；' + esc(v.gateText) + '。</div>' +
-    '<div class="relay-case-line"><b>中位样本：</b>' + mids + '。</div>' +
-    '<div class="relay-case-line"><b>当前接力身位：</b>' + heights + '。</div>' +
-    '<div class="relay-case-line"><b>推荐节点票：</b></div><div class="relay-case-chips">' + nodes + '</div>' +
-    '<div class="relay-auction-note">' + esc(ticketNote) + '</div>' +
-    '</div>';
+  return currentCaseCardHtml(v);
 }
 
 function renderLeaderRelay() {
@@ -7336,10 +7437,7 @@ function renderLeaderRelay() {
       ? view.oldFeedback.slice(0, 3).map(x => x.name + " " + x.lb + "板·" + x.status).join("、")
       : "无3板以上旧龙");
   const heightRows = (currentNode && currentNode.heightRows) || view.heightRows || [];
-  const heightText = heightRows.length
-    ? heightRows.map(x => x.name + " " + (x.lbc || 1) + "板" +
-        (x.yizi ? "·一字" : "·首封" + hhmm(x.fbt))).join("、")
-    : "暂无";
+  const heightText = relayHeightLabel(heightRows);
   const nodeTicketRows = (currentNode && currentNode.nodeTickets) || view.nodeTickets || [];
   const nodeTicketText = nodeTicketRows.length
     ? nodeTicketRows.slice(0, 5).map(x => (x.pickRole ? x.pickRole + "·" : "") +
@@ -7347,10 +7445,7 @@ function renderLeaderRelay() {
         (x.yizi ? "·一字待开板换手" : "·首封" + hhmm(x.fbt))).join("、") +
         (nodeTicketRows.length > 5 ? "，等" + nodeTicketRows.length + "只" : "")
     : "暂无";
-  const candText = heightRows.length
-    ? heightRows.slice(0, 3).map(x => x.name + "(" + (x.lbc || 1) + "板" +
-        (heightRows.length === 1 ? "·唯一" : "·并列") + ")").join("、")
-    : "暂无市场最高接力位";
+  const candText = heightRows.length ? relayHeightLabel(heightRows) : "暂无市场最高接力位";
   const diffText = view.diffusion.length
     ? view.diffusion.slice(0, 3).map(x => x.theme + x.count + "只").join("、")
     : "没有3只以上同题材扩散";
@@ -7364,7 +7459,7 @@ function renderLeaderRelay() {
       (currentNode && currentNode.midAlive.length ? " · 中位剩" + currentNode.midAlive.length + "只" : "") +
       '</small></div>' +
     '<div class="relay-step ' + (heightRows.length ? "done" : "muted") +
-      '"><span>02 · 当前接力身位</span><b>' + esc(heightText) +
+      '"><span>02 · 市场最高板</span><b>' + esc(heightText) +
       '</b><small>先看市场最高板，再看下方节点候选</small></div>' +
     '<div class="relay-step ' + (nodeTicketRows.length ? "done" : "muted") +
       '"><span>03 · 推荐节点票（2板）</span><b>' + esc(nodeTicketText) +
@@ -7386,10 +7481,10 @@ function renderLeaderRelay() {
           (caseView.clearOffset === null ? "中位样本待确认" : "中位最晚在D+" + caseView.clearOffset + "退出")))
       : "暂无完整案例") +
     '<br><b>穿越：</b>' + esc(crossText);
-  const rows = heightRows.slice(0, 3).map((x, i) => {
+  const rows = heightRows.slice(0, 1).map((x, i) => {
     const theme = String(marketThemeOf(x) || x.bk || x.hybk || "其他").trim() || "其他";
     return {
-      rank: i + 1, role: heightRows.length === 1 ? "当前唯一接力位" : "并列最高接力位",
+      rank: i + 1, role: "当前市场最高板",
       name: x.name, lb: Number(x.lbc || 1), unique: heightRows.length === 1,
       theme, sectorN: Number((view.themeCount || {})[theme] || 0),
       fbt: x.fbt, fund: x.fund, close: x.close, priority: 3
@@ -7416,23 +7511,7 @@ function renderLeaderRelay() {
   ], { sort: (a, b) => a.rank - b.rank, rowCls: r => r.priority >= 3 ? "rec" : "" });
 
   if (hint) {
-    const names = heightRows.slice(0, 3);
-    hint.innerHTML =
-      '<div class="relay-auction-card"><div class="relay-auction-head"><b>当前断板节点 · ' +
-      esc(currentNodeTitle) + '</b><span>' + esc(view.source || "当日连板历史") +
-      ' · ' + esc(view.today) + '</span></div>' +
-      relayCaseHtml(caseView) +
-      '<div class="relay-case-line"><b>当前接力身位：</b>' + esc(heightText) + '</div>' +
-      '<div class="relay-case-line"><b>推荐节点票：</b>' + esc(nodeTicketText) + '</div>' +
-      '<div class="relay-auction-names">' +
-      (names.length
-        ? names.map(x => '<span class="tag rec">' +
-            esc(x.name + " · 当前市场最高 · " + (x.lbc || 1) + "板") + '</span>').join("")
-        : '<span class="tag ' + (currentNode && currentNode.midAlive.length ? "bad" : "") + '">' +
-          esc(currentNodeTitle) + '</span>') +
-      '</div><div class="relay-auction-note">' +
-      esc(currentNode ? currentNode.gateText : view.node.text) +
-      ' ' + esc(crossText) + '。只作接力观察，不改现有打板评分。</div></div>';
+    hint.innerHTML = currentBreakNodeHtml();
   }
 }
 
