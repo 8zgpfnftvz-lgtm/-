@@ -2387,6 +2387,86 @@ tbody tr:hover td .lnk{text-decoration:underline}
     var n = +((x || {}).days) || 0;
     return (n > 0 && n < 100) ? n : 1;
   }
+
+  function quoteTradingDate(snap) {
+    var counts = {};
+    Object.keys(snap || {}).forEach(function (sym) {
+      var t = String((snap[sym] || {}).time || "");
+      var m = t.match(/^(\d{4})(\d{2})(\d{2})/);
+      if (!m) return;
+      var d = m[1] + "-" + m[2] + "-" + m[3];
+      counts[d] = (counts[d] || 0) + 1;
+    });
+    return Object.keys(counts).sort(function (a, b) {
+      return counts[b] - counts[a] || String(b).localeCompare(String(a));
+    })[0] || "";
+  }
+
+  /*
+   * 东财涨停池有时晚于腾讯行情更新。这里用实时报价补齐当天池，
+   * 只修正“行情日期与涨停板数”的数据错位，不改变任何选股阈值。
+   */
+  function buildRealtimePool(pools, snap, day) {
+    var prevDates = Object.keys(pools || {}).filter(function (d) { return d < day; }).sort();
+    var prevDate = prevDates.length ? prevDates[prevDates.length - 1] : "";
+    var prev = prevDate ? ((pools[prevDate] || {}).zt || []) : [];
+    var prevMap = {};
+    prev.forEach(function (x) { prevMap[E.symOf(x.c, x.m)] = x; });
+    var official = pools[day] || {};
+    var officialZt = {}, officialZb = {}, officialDt = {};
+    (official.zt || []).forEach(function (x) { officialZt[E.symOf(x.c, x.m)] = x; });
+    (official.zb || []).forEach(function (x) { officialZb[E.symOf(x.c, x.m)] = x; });
+    (official.dt || []).forEach(function (x) { officialDt[E.symOf(x.c, x.m)] = x; });
+    var IND = window.__IND__ || [[], {}];
+    var indNames = IND[0] || {}, indIdx = IND[1] || {};
+    var zt = [], zb = [], dtp = [];
+    Object.keys(snap || {}).forEach(function (sym) {
+      if (!/^(sh6|sz0|sz2|sz3|sh68)/.test(sym)) return;
+      var q = snap[sym] || {};
+      if (!q.preClose || !q.close) return;
+      var isGrowth = /^(sz30|sh68)/.test(sym);
+      var upLimit = q.limitUp > 0 ? q.limitUp : +(q.preClose * (isGrowth ? 1.2 : 1.1)).toFixed(2);
+      var downLimit = q.limitDown > 0 ? q.limitDown : +(q.preClose * (isGrowth ? 0.8 : 0.9)).toFixed(2);
+      var code = sym.slice(2), m = sym.indexOf("sh") === 0 ? 1 : 0;
+      var iv = indIdx[sym];
+      var bk = iv === undefined ? "" : (indNames[iv] || "");
+      var old = officialZt[sym] || officialZb[sym] || {};
+      var common = {
+        c: code, m: m, n: q.name || old.n || code, hybk: old.hybk || bk,
+        hs: q.turnover, amount: q.amount, ltsz: q.floatCap,
+        today_pct: q.pct, close: q.close,
+        fbt: old.fbt || 0, fund: old.fund || 0, zbc: old.zbc || 0,
+        yizi: q.open === q.high && q.high === q.low && q.low === q.close,
+        tags: old.tags || []
+      };
+      if (q.close >= upLimit - 0.005) {
+        var prevRow = prevMap[sym];
+        zt.push(Object.assign({}, old, common, {
+          lbc: prevRow ? Number(prevRow.lbc || 1) + 1 : 1,
+          isZb: false
+        }));
+      } else if (q.high >= upLimit - 0.005) {
+        zb.push(Object.assign({}, old, common, {
+          lbc: 0, isZb: true, today_pct: q.pct
+        }));
+      }
+      if (q.close <= downLimit + 0.005) {
+        dtp.push(Object.assign({}, officialDt[sym] || {}, common, {
+          lbc: 0, today_pct: q.pct
+        }));
+      }
+    });
+    // 腾讯没有报价的停牌或接口缺项，保留东财当天有效记录。
+    var ztMap = {}, zbMap = {}, dtMap = {};
+    zt.forEach(function (x) { ztMap[E.symOf(x.c, x.m)] = x; });
+    zb.forEach(function (x) { zbMap[E.symOf(x.c, x.m)] = x; });
+    dtp.forEach(function (x) { dtMap[E.symOf(x.c, x.m)] = x; });
+    Object.keys(officialZt).forEach(function (s) { if (!ztMap[s]) zt.push(officialZt[s]); });
+    Object.keys(officialZb).forEach(function (s) { if (!zbMap[s]) zb.push(officialZb[s]); });
+    Object.keys(officialDt).forEach(function (s) { if (!dtMap[s]) dtp.push(officialDt[s]); });
+    return { zt: zt, zb: zb, dt: dtp };
+  }
+
   function buildAnchor(dt, pools, snap, chart) {
     var d = pools[dt] || {};
     var zt = d.zt || [], zb = d.zb || [], dtp = d.dt || [];
@@ -3036,6 +3116,20 @@ tbody tr:hover td .lnk{text-decoration:underline}
         return fetchSnapshot(codes, cb);
       }).then(function (snap) {
         ctx.snap = snap;
+        var realtimeDate = quoteTradingDate(snap);
+        var now = new Date();
+        var localToday = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") +
+          "-" + String(now.getDate()).padStart(2, "0");
+        var hhmm = now.getHours() * 100 + now.getMinutes();
+        if (realtimeDate && realtimeDate === localToday &&
+            now.getDay() >= 1 && now.getDay() <= 5 && hhmm >= 925) {
+          var realtimePool = buildRealtimePool(ctx.pools, snap, realtimeDate);
+          if (realtimePool.zt.length) {
+            ctx.pools[realtimeDate] = realtimePool;
+            ctx.poolDates = Object.keys(ctx.pools).sort();
+            ctx.dt = realtimeDate;
+          }
+        }
         progress(cb, '③ 存储当日快照…', 0.66);
         var compact = {};
         Object.keys(snap).forEach(function (s) {
@@ -3910,17 +4004,20 @@ function aucJudge(kind, pct) {
   return "不及预期";
 }
 function aucPool() {
+  let cached = null;
   try {
     const raw = localStorage.getItem("auctionPool");
     if (raw) {
       const o = JSON.parse(raw);
-      if (o && o.items && o.items.length) return o;
+      if (o && o.items && o.items.length) cached = o;
     }
   } catch (e) { /* 某些浏览器禁用本地存储 */ }
+  let current = null;
   if (DATA && DATA.anchor && (DATA.anchor.pool || []).length) {
-    return { date: DATA.anchor.date, items: DATA.anchor.pool };
+    current = { date: DATA.anchor.date, items: DATA.anchor.pool };
   }
-  return null;
+  if (cached && current) return String(current.date || "") >= String(cached.date || "") ? current : cached;
+  return current || cached;
 }
 function aucClockText() {
   const d = new Date();
