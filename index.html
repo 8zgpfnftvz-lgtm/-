@@ -3643,6 +3643,41 @@ let ARC_DATA = null;
 let ARC_LOADING = null;
 let ARC_LIVE_BUSY = false;
 let ARC_LIVE_LAST = "";
+let DABANKE_DATA = { days: {} };
+let DABANKE_LOADING = null;
+const DABANKE_CACHE_KEY = "dabankeReviewDataV2";
+
+function dabankeDay(date) {
+  return (DABANKE_DATA && DABANKE_DATA.days && DABANKE_DATA.days[date]) || null;
+}
+async function loadDabankeData(force) {
+  if (DABANKE_LOADING) return DABANKE_LOADING;
+  try {
+    const cached = JSON.parse(localStorage.getItem(DABANKE_CACHE_KEY) || "null");
+    if (cached && cached.days) DABANKE_DATA = cached;
+  } catch (e) { }
+  DABANKE_LOADING = (async () => {
+    try {
+      const response = await fetch("dabanke_data.json?v=" + Date.now(), {
+        cache: "no-store"
+      });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const value = await response.json();
+      if (value && value.days) {
+        DABANKE_DATA = value;
+        try {
+          localStorage.setItem(DABANKE_CACHE_KEY, JSON.stringify(value));
+        } catch (e) { }
+      }
+    } catch (e) {
+      if (force) throw e;
+    } finally {
+      DABANKE_LOADING = null;
+    }
+    return DABANKE_DATA;
+  })();
+  return DABANKE_LOADING;
+}
 
 function isTransientNetworkError(msg) {
   return /Script error|Failed to fetch|Load failed|NetworkError|请求超时|网络请求失败|加载失败|接口暂时都不可用|HTTP 5\d\d|empty/i
@@ -5005,17 +5040,32 @@ async function loadAuction() {
   const cyc = DATA && DATA.cycle ? DATA.cycle : {};
   const risk = auctionRiskHint(auctionQuotes, dec);
   const midSummary = cycleMidSummary();
+  const nodeNow = AUC.currentNode || currentBreakNodeView();
+  const nodeLeaders = nodeNow
+    ? (nodeNow.leaders || [nodeNow.leader]).filter(Boolean)
+      .map(x => x.name + x.lb + "板").join("、")
+    : "";
+  const nodeMain = nodeNow
+    ? nodeLeaders + "断板 · " + nodeNow.stage
+    : ((cyc.state || "混沌") + (cyc.substate ? " · " + cyc.substate : ""));
+  const nodeSub = nodeNow
+    ? ((nodeNow.midAlive.length
+      ? "中位未出清：" + nodeNow.midAlive.slice(0, 5)
+        .map(x => x.name + x.lb + "板").join("、")
+      : (nodeNow.clearOffset !== null && nodeNow.clearOffset <= 2
+        ? "中位快速出清" : "中位已出清")) + " · " + nodeNow.gateText)
+    : cycleCardSub(midSummary);
   cardBox.innerHTML =
     card("情绪锚定判定", dec.verdict, "锚定池 " + ANC.length + " 只；今日反馈 " + dec.total +
       " 只：超预期 " + dec.sup + " / 符合 " + dec.ok + " / 不及预期 " + dec.bad +
       "；加权情绪分 " + (dec.score === null ? "-" : dec.score.toFixed(2)), dec.cls) +
     card("可操作性", dec.action,
       dec.locked ? "依据已锁定的9:25竞价反馈" : "尚未锁定9:25，只显示预判，不执行", dec.cls) +
-    '<div class="card" id="aucCycleCard"><div class="k">周期节点 / 仓位</div>' +
-      '<div class="v ' + (cyc.state && /主升/.test(cyc.state) ? "up" :
-        (/退潮|冰点/.test(cyc.state) ? "down" : "")) + '">' +
-        esc((cyc.state || "混沌") + (cyc.substate ? " · " + cyc.substate : "")) + '</div>' +
-      '<div class="k" id="aucCycleSub">' + cycleCardSub(midSummary) + '</div></div>' +
+    '<div class="card" id="aucCycleCard"><div class="k">当前断板节点 / 仓位</div>' +
+      '<div class="v ' + (nodeNow && nodeNow.midAlive.length ? "down" :
+        (cyc.state && /主升/.test(cyc.state) ? "up" : "")) + '">' +
+        esc(nodeMain) + '</div>' +
+      '<div class="k" id="aucCycleSub">' + esc(nodeSub) + '</div></div>' +
     card("9:24:50 持仓风控", risk.title, risk.text, risk.cls) +
     card("行情时间", tTxt, clock +
       (clock === "非交易时段" ? " · 这不是竞价数据，判断仅供参考，请在 9:15–9:25 使用本页" : ""));
@@ -7281,6 +7331,11 @@ function currentCaseCardHtml(v) {
   const pool = ((DATA && DATA.anchor && DATA.anchor.pool) || []);
   const poolMap = {};
   pool.forEach(x => { poolMap[x.symbol] = x; });
+  const sourceDay = dabankeDay(v.breakDate);
+  const sourceStocks = (sourceDay && sourceDay.stocks) || {};
+  const sourceDataBadge = sourceDay
+    ? '<span class="tag ok">打板客数据已接入</span>'
+    : '<span class="tag">打板客数据待同步</span>';
   const aliveSet = {};
   (v.midAlive || []).forEach(x => { aliveSet[x.symbol] = 1; });
   const mids = (v.mids || []).slice().sort((a, b) => Number(b.lb || 0) - Number(a.lb || 0));
@@ -7298,13 +7353,21 @@ function currentCaseCardHtml(v) {
   const rows = mids.map(m => {
     const alive = !!aliveSet[m.symbol];
     const live = poolMap[m.symbol];
+    const source = sourceStocks[m.symbol];
     const actual = alive ? "仍在连板"
       : (m.break_date ? shortCnDate(m.break_date)
         : (live && live.group && live.group !== "涨停" ? shortCnDate(v.today) : "待确认"));
-    const perf = alive ? "仍在" + m.lb + "板"
-      : ((live && live.today_pct !== null && live.today_pct !== undefined)
-        ? "第" + (Number(m.lb) + 1) + "板失败，" + pct(Number(live.today_pct), 2)
-        : "第" + (Number(m.lb) + 1) + "板失败");
+    const perf = source
+      ? (source.status === "success"
+        ? (source.ladder || "晋级") +
+          (source.statusText ? "（" + source.statusText + "）" : "") +
+          (source.change ? "，" + source.change : "")
+        : (source.ladder || ("第" + (Number(m.lb) + 1) + "板")) +
+          "失败" + (source.change ? "，" + source.change : ""))
+      : (alive ? "仍在" + m.lb + "板"
+        : ((live && live.today_pct !== null && live.today_pct !== undefined)
+          ? "第" + (Number(m.lb) + 1) + "板失败，" + pct(Number(live.today_pct), 2)
+          : "第" + (Number(m.lb) + 1) + "板失败"));
     return '<tr>' +
       '<td><b>' + esc(m.name) + '</b><span class="current-case-theme">' +
         esc(stockThemeLabel(m.symbol, m.theme || "")) + '</span></td>' +
@@ -7321,6 +7384,14 @@ function currentCaseCardHtml(v) {
   const brokenCount = Math.max(0, mids.length - aliveCount);
   const conclusion = "高标断板 + " + (aliveCount ? "中位未快速出清" :
     (v.clearOffset !== null && v.clearOffset <= 2 ? "中位快速出清" : "中位出清"));
+  const sourceMarket = sourceDay && sourceDay.market
+    ? ("打板客当日：" + (sourceDay.market.note || "市场概况已接入") +
+      (sourceDay.market.limit && sourceDay.market.limit["is-sealed"]
+        ? "；当日封板" + sourceDay.market.limit["is-sealed"].value +
+          (sourceDay.market.limit["is-sealed"].detail
+            ? "，" + sourceDay.market.limit["is-sealed"].detail : "")
+        : "") + "。")
+    : "";
   const research = aliveCount
     ? "研究点：中位没有快速出清时，旧周期仍在释放分歧，应继续等出清或等待更高辨识度的新节点。"
     : "研究点：高标负反馈后，重点看断板日、D+1、D+2是否出现新的2板节点。";
@@ -7330,7 +7401,7 @@ function currentCaseCardHtml(v) {
       '<div class="current-case-title">当前节点：' + esc(shortCnDate(v.leaderEnd)) + " " +
         esc(leader.name) + '断板——' + esc(kind) + '</div>' +
       '<div class="current-case-meta">' + badge +
-        '<span class="tag">打板客数据待同步</span>' +
+        sourceDataBadge +
         '<span class="tag">' + leader.lb + '板</span>' +
         '<span class="k">' + esc(stockThemeLabel(leader.symbol, leader.theme || "")) + '</span>' +
       '</div>' +
@@ -7348,7 +7419,8 @@ function currentCaseCardHtml(v) {
         esc(shortCnDate(v.breakDate)) + "，" + esc(leader.name) + leader.lb + "进" +
         (Number(leader.lb) + 1) + '失败并断板；已有' + brokenCount + '只断板，仍有' +
         aliveCount + '只保持连板。断板日最高板为' + dayMax + '板，前一日龙头为' + leader.lb +
-        '板。<br><b>结论：</b>' + esc(conclusion) + '。</span></div>' +
+        '板。' + (sourceMarket ? '<br>' + esc(sourceMarket) : "") +
+        '<br><b>结论：</b>' + esc(conclusion) + '。</span></div>' +
       '<div class="current-case-research">' + esc(research) + '</div>' +
       (nodeTags ? '<div class="current-case-research"><b>推荐节点票：</b></div>' +
         '<div class="relay-case-chips">' + nodeTags + '</div>' : '') +
@@ -7415,6 +7487,11 @@ function renderLeaderRelay() {
   }
   const currentNode = currentBreakNodeView();
   const caseView = currentNode || relayBreakCaseView(view);
+  const caseForCard = currentNode || (caseView ? Object.assign({}, caseView, {
+    today: view.today,
+    currentMax: view.currentMax,
+    midAlive: (caseView.mids || []).filter(m => m.active)
+  }) : null);
   const currentNodeTitle = currentNode
     ? (currentNode.midAlive.length
       ? currentNode.stage + " · 中位未出清"
@@ -7453,7 +7530,7 @@ function renderLeaderRelay() {
     ? ("穿越状态：" + cross.state + "；原高标" + cross.oldName + cross.oldMax +
        "板，断板后最高" + cross.postPeak + "板")
     : "尚无5板以上原高标断板，暂不判断穿越";
-  chain.innerHTML = relayCaseHtml(caseView) +
+  chain.innerHTML = currentCaseCardHtml(caseForCard) +
     '<div class="relay-step ' + (currentNode ? "done" : "wait") + '"><span>01 · 当前首阴</span><b>' +
       esc(oldText) + '</b><small>' + esc(currentNode ? currentNode.stage + "，节点已形成" : "旧龙仍封，等待断板") +
       (currentNode && currentNode.midAlive.length ? " · 中位剩" + currentNode.midAlive.length + "只" : "") +
@@ -10098,6 +10175,12 @@ if (/^https?:/.test(location.protocol) && "serviceWorker" in navigator) {
 
 load().then(() => {
   aucAutoTick();
+  loadDabankeData().then(() => {
+    try {
+      if (!$("#tab-auction").hidden) safeLoadAuction();
+      if (!$("#tab-op").hidden) renderLeaderRelay();
+    } catch (e) { }
+  }).catch(() => { });
   const m = location.hash.match(/^#s=([a-z]{2}\d{6})$/i);
   if (m) openStock(m[1].toLowerCase(), false);
   if (/^#auc$/.test(location.hash)) {
