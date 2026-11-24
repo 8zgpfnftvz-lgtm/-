@@ -280,11 +280,19 @@ tbody tr:hover td .lnk{text-decoration:underline}
 .review-execution.warn{border-left:4px solid #d69218}
 .review-execution.bad{border-left:4px solid var(--down)}
 .review-execution-title{font-size:17px;font-weight:700;margin-bottom:4px}
-.review-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px}
-.review-metric{border:1px solid var(--border);border-radius:11px;padding:10px;background:var(--soft)}
-.review-metric .m-label{font-size:10.5px;color:var(--muted)}
-.review-metric .m-value{font-size:19px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
-.review-metric .m-note{font-size:10.5px;color:var(--muted);margin-top:1px}
+.review-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:6px}
+.review-metric{border:1px solid var(--border);border-radius:9px;padding:7px 8px;background:var(--soft)}
+.review-metric .m-label{font-size:9.5px;color:var(--muted)}
+.review-metric .m-value{font-size:16px;font-weight:700;margin-top:1px;font-variant-numeric:tabular-nums}
+.review-metric .m-note{font-size:9.5px;color:var(--muted);margin-top:1px}
+.review-compact{padding:9px 10px}
+.review-compact .review-section-head{margin-bottom:7px}
+.review-compact h2{font-size:15px;margin-bottom:6px}
+#limitLifecycleSection .limit-board-dist{gap:4px;margin-bottom:6px}
+#limitLifecycleSection .limit-dist-item{padding:6px 7px;border-radius:9px}
+#limitLifecycleSection .limit-dist-item span{font-size:9.5px}
+#limitLifecycleSection .limit-dist-item b{font-size:16px}
+#limitLifecycleSection .limit-chart-head{margin:6px 0 1px}
 .annual-cycle-panel{padding:0;overflow:hidden}
 .annual-cycle-summary{display:flex;align-items:center;justify-content:space-between;gap:14px;
   padding:14px 16px;cursor:pointer;list-style:none;user-select:none;background:
@@ -596,7 +604,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
   .review-split{grid-template-columns:1fr}
   .review-dim{grid-template-columns:74px 1fr 46px}
   .review-anchor-grid{grid-template-columns:1fr}
-  .review-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .review-metrics{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
   .annual-cycle-summary{padding:12px;align-items:flex-start}
   .annual-cycle-summary h2{font-size:16px}
   .annual-cycle-sub{max-width:225px;font-size:10.5px}
@@ -909,14 +917,17 @@ tbody tr:hover td .lnk{text-decoration:underline}
 
 <section id="tab-op" hidden>
   <div class="review-shell">
-    <div class="review-section">
+    <div class="review-section review-compact">
       <div class="review-section-head">
-        <h2 style="margin:0">关键指标</h2>
+        <div>
+          <div class="review-kicker dark">DAILY METRICS</div>
+          <h2 style="margin:0">关键指标</h2>
+        </div>
         <span class="review-date" id="reviewDate"></span>
       </div>
       <div class="review-metrics" id="reviewMetrics"></div>
     </div>
-    <div class="review-section">
+    <div class="review-section review-compact" id="limitLifecycleSection">
       <div class="review-section-head">
         <div>
           <div class="review-kicker dark">LIMIT-UP LIFECYCLE</div>
@@ -3662,6 +3673,51 @@ let ARC_LIVE_LAST = "";
 let DABANKE_DATA = { days: {} };
 let DABANKE_LOADING = null;
 const DABANKE_CACHE_KEY = "dabankeReviewDataV2";
+let DABANKE_INDEX = { themes: {}, patterns: {} };
+let VIEW_CACHE = new WeakMap();
+
+function resetViewCache() {
+  VIEW_CACHE = new WeakMap();
+}
+function currentViewCache() {
+  if (!DATA) return {};
+  let cache = VIEW_CACHE.get(DATA);
+  if (!cache) {
+    cache = {};
+    VIEW_CACHE.set(DATA, cache);
+  }
+  return cache;
+}
+function rebuildDabankeIndex() {
+  const themes = {}, patterns = {};
+  Object.keys((DABANKE_DATA && DABANKE_DATA.days) || {}).forEach(date => {
+    const day = DABANKE_DATA.days[date];
+    Object.keys((day && day.stocks) || {}).forEach(symbol => {
+      const stock = day.stocks[symbol];
+      const reason = String((stock && stock.reason) || "");
+      const candidates = ((stock && stock.activeThemes) || []).map(x => Object.assign({}, x, {
+        reasonPos: reason.indexOf(String(x.name || ""))
+      })).sort((a, b) => {
+        if (a.reasonPos >= 0 && b.reasonPos < 0) return -1;
+        if (b.reasonPos >= 0 && a.reasonPos < 0) return 1;
+        if (a.reasonPos >= 0 && b.reasonPos >= 0 && a.reasonPos !== b.reasonPos)
+          return a.reasonPos - b.reasonPos;
+        return Number(b.sealedStocks || 0) - Number(a.sealedStocks || 0) ||
+          Number(b.activeStocks || 0) - Number(a.activeStocks || 0);
+      });
+      themes[date + "|" + symbol] = candidates.length
+        ? String(candidates[0].name || "") : String((stock && stock.theme) || "");
+    });
+    ((day && day.patterns) || []).forEach(pattern => {
+      (pattern.stocks || []).forEach(stock => {
+        const key = date + "|" + stock.symbol;
+        (patterns[key] = patterns[key] || []).push(pattern.name);
+      });
+    });
+  });
+  DABANKE_INDEX = { themes, patterns };
+  resetViewCache();
+}
 
 function dabankeDay(date) {
   return (DABANKE_DATA && DABANKE_DATA.days && DABANKE_DATA.days[date]) || null;
@@ -3674,21 +3730,8 @@ function dabankeStockOf(symbol, date) {
   return day && day.stocks ? day.stocks[symbol] || null : null;
 }
 function dabankePrimaryTheme(symbol, date) {
-  const stock = dabankeStockOf(symbol, date);
-  if (!stock) return "";
-  const reason = String(stock.reason || "");
-  const tags = (stock.activeThemes || []).map(x => Object.assign({}, x, {
-    reasonPos: reason.indexOf(String(x.name || ""))
-  })).sort((a, b) => {
-    if (a.reasonPos >= 0 && b.reasonPos < 0) return -1;
-    if (b.reasonPos >= 0 && a.reasonPos < 0) return 1;
-    if (a.reasonPos >= 0 && b.reasonPos >= 0 && a.reasonPos !== b.reasonPos)
-      return a.reasonPos - b.reasonPos;
-    return Number(b.sealedStocks || 0) - Number(a.sealedStocks || 0) ||
-      Number(b.activeStocks || 0) - Number(a.activeStocks || 0) ||
-      String(a.name || "").localeCompare(String(b.name || ""), "zh");
-  });
-  return tags.length ? String(tags[0].name || "") : String(stock.theme || "");
+  const day = date || (DATA && DATA.meta && DATA.meta.date);
+  return (DABANKE_INDEX.themes[day + "|" + symbol]) || "";
 }
 function dabankeLayerMap(date) {
   const day = date ? dabankeDay(date) : dabankeCurrentDay();
@@ -3697,15 +3740,17 @@ function dabankeLayerMap(date) {
   return out;
 }
 function dabankePatternsFor(symbol, date) {
-  const day = date ? dabankeDay(date) : dabankeCurrentDay();
-  return ((day && day.patterns) || []).filter(x =>
-    (x.stocks || []).some(s => s.symbol === symbol)).map(x => x.name);
+  const day = date || (DATA && DATA.meta && DATA.meta.date);
+  return DABANKE_INDEX.patterns[day + "|" + symbol] || [];
 }
 async function loadDabankeData(force) {
   if (DABANKE_LOADING) return DABANKE_LOADING;
   try {
     const cached = JSON.parse(localStorage.getItem(DABANKE_CACHE_KEY) || "null");
-    if (cached && cached.days) DABANKE_DATA = cached;
+    if (cached && cached.days) {
+      DABANKE_DATA = cached;
+      rebuildDabankeIndex();
+    }
   } catch (e) { }
   DABANKE_LOADING = (async () => {
     try {
@@ -3716,6 +3761,7 @@ async function loadDabankeData(force) {
       const value = await response.json();
       if (value && value.days) {
         DABANKE_DATA = value;
+        rebuildDabankeIndex();
         try {
           localStorage.setItem(DABANKE_CACHE_KEY, JSON.stringify(value));
         } catch (e) { }
@@ -6195,7 +6241,6 @@ function renderDabankeEcoPanel() {
   host.hidden = false;
   const eco = day.market.ecosystem || day.market.limit || {};
   const wanted = [
-    ["is-height", "最高板"],
     ["is-sealed", "当日封板"],
     ["is-first-board", "首板封住"],
     ["is-one-to-two", "1进2"],
@@ -6209,10 +6254,6 @@ function renderDabankeEcoPanel() {
   const breadth = day.market.breadthTotals || {};
   cards += '<div class="db-kpi"><span>红盘率</span><b>' +
     esc((breadth.rate && breadth.rate.value) || "—") + '</b><small>全市场上涨/下跌分布</small></div>';
-  const turnover = day.market.turnover || {};
-  const t5 = ((turnover.comparisons || []).find(x => /5日/.test(x.label)) || {});
-  cards += '<div class="db-kpi"><span>量能对比</span><b>' +
-    esc(turnover.value || "—") + '</b><small>较5日均量 ' + esc(t5.value || "—") + '</small></div>';
   const themes = (day.themes || []).slice()
     .sort((a, b) => (b.sealedStocks || 0) - (a.sealedStocks || 0)).slice(0, 3)
     .map(x => '<span class="tag ok">' + esc(x.name + " · 封板" + x.sealedStocks +
@@ -6710,6 +6751,12 @@ function annualCycleRender() {
 
 /* ---------- 穿越状态：候选 → 破局确认 → 穿越确认 ---------- */
 function leaderCrossView() {
+  if (DATA) {
+    const cache = currentViewCache();
+    if (Object.prototype.hasOwnProperty.call(cache, "leaderCross")) {
+      return cache.leaderCross;
+    }
+  }
   const hist = DATA && DATA.limit_history;
   const today = DATA && DATA.meta && DATA.meta.date;
   if (!hist || !Array.isArray(hist.dates) || !Array.isArray(hist.runs) || !today) return null;
@@ -6780,14 +6827,22 @@ function leaderCrossView() {
   else if (candidates.some(x => x.cross_state === "破局确认")) state = "破局确认";
   else if (candidates.some(x => x.cross_state === "穿越候选")) state = "穿越候选";
   else if (postPeak > 0) state = "破局未穿越";
-  return {
+  const result = {
     oldRun, oldName: oldRun[1], oldMax, breakDate,
     candidates, state, postPeak, currentMax
   };
+  if (DATA) currentViewCache().leaderCross = result;
+  return result;
 }
 
 /* ---------- 龙头接力链：只做关系标签，不自动升级主买点 ---------- */
 function leaderRelayView() {
+  if (DATA) {
+    const cache = currentViewCache();
+    if (Object.prototype.hasOwnProperty.call(cache, "leaderRelay")) {
+      return cache.leaderRelay;
+    }
+  }
   const hist = DATA && DATA.limit_history;
   const today = DATA && DATA.meta && DATA.meta.date;
   if (!hist || !Array.isArray(hist.dates) || !Array.isArray(hist.runs) || !today) return null;
@@ -6955,7 +7010,7 @@ function leaderRelayView() {
       text: "旧高度龙断板后没有2板以上、题材至少3只扩散的接位标的，周期存在退潮风险。"
     };
   }
-  return {
+  const result = {
     today, prev, prevMax, currentMax, oldBroken, oldFeedback,
     marketNode, prevMidRows, midAlive, midCleared,
     source, anchor: cycleDragon,
@@ -6963,6 +7018,8 @@ function leaderRelayView() {
     iceThreeCount: zt.filter(x => boardCountAt(x, today) === 3).length,
     candidates, diffusion, node
   };
+  if (DATA) currentViewCache().leaderRelay = result;
+  return result;
 }
 
 function relayRoleMap() {
@@ -7141,6 +7198,10 @@ function threeMostText(view) {
 
 function nodeExecutionView() {
   if (!DATA) return null;
+  const cache = currentViewCache();
+  if (Object.prototype.hasOwnProperty.call(cache, "nodeExecution")) {
+    return cache.nodeExecution;
+  }
   const cyc = DATA.cycle || {};
   const nodeNow = currentBreakNodeView();
   const anchor = (nodeNow && nodeNow.leader) || cyc.dragon || null;
@@ -7264,7 +7325,7 @@ function nodeExecutionView() {
       ? ((String(marketThemeOf(x) || x.bk || "其他").trim() === anchorTheme) ? "内切" : "外切")
       : "路径待定"
   }));
-  return {
+  const result = {
     tone, title, action, anchor, breakAge, phase, midCleared, midText, layer: nodeLayer,
     anchorTheme, cohortText, breakPath,
     cycleOwner, newCycleState, currentMaxBoard,
@@ -7289,6 +7350,8 @@ function nodeExecutionView() {
     preferred: candidateRows.length === 1 && !candidateRows[0].yizi ? candidateRows[0] : null,
     candidates: candidateRows
   };
+  cache.nodeExecution = result;
+  return result;
 }
 
 function nodeExecutionHtml() {
@@ -7481,6 +7544,10 @@ function relayCaseHtml(c) {
 }
 
 function currentBreakNodeView(items) {
+  const cache = items ? null : currentViewCache();
+  if (cache && Object.prototype.hasOwnProperty.call(cache, "currentBreak")) {
+    return cache.currentBreak;
+  }
   const c = relayBreakCaseView({});
   if (!c) return null;
   const hist = DATA && DATA.limit_history;
@@ -7504,7 +7571,7 @@ function currentBreakNodeView(items) {
   const midAlive = (c.mids || []).filter(x => nowBySym[x.symbol]);
   const stage = offset <= 0 ? "首阴第1天" : "首阴第" + (offset + 1) + "天";
   const highBlocked = offset <= 2 && midAlive.length > 0;
-  return Object.assign({}, c, {
+  const result = Object.assign({}, c, {
     today, offset, stage, currentMax, heightRows, nodeTickets, midAlive, highBlocked,
     nodeTicketStats: {
       total: nodeTicketRec.total, passed: nodeTicketRec.passed,
@@ -7515,6 +7582,8 @@ function currentBreakNodeView(items) {
       ? "中位样本仍有活口，2进3及以上只观察，不自动执行"
       : "可按节点层级观察竞价确认"
   });
+  if (cache) cache.currentBreak = result;
+  return result;
 }
 
 function shortCnDate(date) {
@@ -8072,7 +8141,23 @@ function renderM1() {
   const first = zt.filter(p => (p.lbc || 1) === 1);
   const duan = pool.filter(p => p.group === "断板");
   const big = pool.filter(p => p.group === "大面");
-  const lad = DATA.ladder || [];
+  const dbDay = dabankeCurrentDay();
+  let lad = DATA.ladder || [];
+  if (dbDay && (dbDay.layers || []).length) {
+    const dbStocks = Object.values(dbDay.stocks || {});
+    lad = dbDay.layers.map(x => {
+      const path = String(x.name || "").match(/(\d+)进(\d+)/);
+      return {
+        from: path ? Number(path[1]) : 0,
+        label: x.name,
+        prev: x.total,
+        promoted: x.passed,
+        rate: parseFloat(x.rate),
+        names: dbStocks.filter(s => s.ladder === x.name && s.status === "success")
+          .map(s => s.name)
+      };
+    });
+  }
   const maxLb = zt.reduce((a, b) => Math.max(a, b.lbc || 0), 0);
   $("#m1stats").innerHTML =
     card("连板（≥2板）", String(currentLian.length) + " 只",
@@ -8086,17 +8171,9 @@ function renderM1() {
   const levels = Object.keys(groups).map(Number).sort((a, b) => b - a);
 
   let html = "";
-  const dbDay = dabankeCurrentDay();
-  if (dbDay && dbDay.layers && dbDay.layers.length) {
-    html += "<h3>打板客 · 分层晋级强度（" + esc(dbDay.date) + "）</h3>" +
-      '<div class="db-eco"><div class="db-eco-line">' +
-      dbDay.layers.map(x => '<span class="tag ' +
-        (x.rate === "0%" ? "bad" : (x.passed > 0 ? "ok" : "")) + '">' +
-        esc(x.name + " " + x.rate + "（" + x.passed + "/" + x.total + "）") +
-        "</span>").join("") + '</div></div>';
-  }
   if (lad.length) {
-    html += "<h3>连板晋级率（" + esc(DATA.anchor.date || "-") + "，按层级分类）</h3>" +
+    html += "<h3>连板晋级率（" + esc((dbDay && dbDay.date) || DATA.anchor.date || "-") +
+      "，按层级分类）</h3>" +
       "<div class='panel'><table id='t_ladder'></table></div>";
   }
   levels.forEach(n => {
@@ -9359,6 +9436,7 @@ function renderTabContent(tab) {
 
 function applyData(payload) {
   DATA = payload;
+  resetViewCache();
   const m = DATA.meta;
   // 存一份到本机，断网时也能打开看上次的数据
   const cacheRecord = { key: "lastData", t: Date.now(), version: DATA_CACHE_VERSION, d: payload };
