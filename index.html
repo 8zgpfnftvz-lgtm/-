@@ -362,7 +362,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
 .relay-fold-hint::after{content:"收起"}
 .relay-panel:not([open]) .relay-fold-hint::after{content:"展开"}
 .relay-body{padding:10px 14px 14px;border-top:1px solid var(--border)}
-.relay-chain{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.relay-chain{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
 .relay-step{border:1px solid var(--border);border-radius:11px;padding:8px 9px;background:var(--soft);min-width:0}
 .relay-step span{display:block;font-size:9px;color:var(--muted);letter-spacing:.7px}
 .relay-step b{display:block;font-size:12px;margin-top:2px;line-height:1.35}
@@ -6417,6 +6417,12 @@ function leaderRelayView() {
   const midCleared = prevMidRows.length > 0 && midAlive.length === 0;
   const marketNode = prevMax >= 5 && oldBroken;
   const currentMax = zt.reduce((n, x) => Math.max(n, Number(x.lbc || 1)), 0);
+  const heightRows = zt.filter(x => Number(x.lbc || 1) === currentMax)
+    .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999) ||
+      String(a.name || "").localeCompare(String(b.name || ""), "zh"));
+  const nodeTickets = zt.filter(x => Number(x.lbc || 1) === 2)
+    .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999) ||
+      String(a.name || "").localeCompare(String(b.name || ""), "zh"));
   const themeCount = {};
   zt.forEach(x => {
     const theme = String(marketThemeOf(x) || "其他").trim() || "其他";
@@ -6493,6 +6499,7 @@ function leaderRelayView() {
     today, prev, prevMax, currentMax, oldBroken, oldFeedback,
     marketNode, prevMidRows, midAlive, midCleared,
     source, anchor: cycleDragon,
+    currentMax, heightRows, nodeTickets,
     iceThreeCount: zt.filter(x => Number(x.lbc || 1) === 3).length,
     candidates, diffusion, node
   };
@@ -6773,7 +6780,15 @@ function nodeExecutionView() {
     tone, title, action, anchor, breakAge, phase, midCleared, midText, layer: nodeLayer,
     anchorTheme, cohortText, breakPath,
     cycleOwner, newCycleState, currentMaxBoard,
-    preferred: candidateRows.length ? candidateRows[0] : null,
+    heightRows: zt.filter(x => Number(x.lbc || 1) === currentMaxBoard)
+      .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999)),
+    nodeTickets: zt.filter(x => Number(x.lbc || 1) === 2).map(x => ({
+      symbol: x.symbol, name: x.name, lb: 2,
+      theme: marketThemeOf(x) || x.bk || "其他",
+      yizi: !!x.yizi, fbt: x.fbt || 0,
+      window: breakAge !== null && breakAge >= 4 ? "新周期节点票" : "补涨节点票"
+    })),
+    preferred: candidateRows.length === 1 && !candidateRows[0].yizi ? candidateRows[0] : null,
     candidates: candidateRows
   };
 }
@@ -6795,12 +6810,22 @@ function nodeExecutionHtml() {
       '</b> · ' + esc(view.preferred.lb + "板 · " + view.preferred.theme) +
       ' · 首封 ' + esc(hhmm(view.preferred.fbt)) + '</div>'
     : "";
+  const heightText = (view.heightRows || []).length
+    ? view.heightRows.map(x => esc(x.name) + " " + (x.lbc || 1) + "板" +
+        (x.yizi ? "（一字·只观察）" : "（首封" + hhmm(x.fbt) + "）")).join("、")
+    : "暂无";
+  const nodeTicketText = (view.nodeTickets || []).length
+    ? view.nodeTickets.slice(0, 8).map(x => '<span class="tag ' + (x.yizi ? "hi" : "ok") + '">' +
+        esc(x.window + " · " + x.name + " · " + x.theme + (x.yizi ? " · 一字" : "")) + "</span>").join("")
+    : '<span class="tag">今日暂无2板节点票</span>';
   return '<div class="node-exec-card ' + esc(view.tone) + '">' +
     '<div class="node-exec-head"><b>' + esc(view.title) + '</b><span>收盘决策 · ' +
       esc(view.phase) + ' · ' + esc(view.cohortText) + '</span></div>' +
     '<div class="node-exec-action">' + esc(view.action) + '</div>' +
     '<div class="node-exec-meta">' + anchorText + ' · ' + esc(view.midText) +
       (view.anchorTheme ? ' · 锚定题材：' + esc(view.anchorTheme) : '') + '</div>' +
+    '<div class="node-exec-meta"><b>当前市场高度身位：</b>' + heightText + '</div>' +
+    '<div class="node-exec-names"><b class="k">今日节点票：</b>' + nodeTicketText + '</div>' +
     '<div class="node-exec-meta">' + esc(threeMostText(view)) + '</div>' +
     preferred +
     '<div class="node-exec-names">' + tags + '</div>' +
@@ -6881,6 +6906,17 @@ function relayBreakCaseView(view) {
         nodeRows.push({ symbol: r[0], name: r[1], day: day, final_lb: Number(r[5] || 0) });
       });
     }
+    const newCycleNodes = [], seenNewNodes = {};
+    for (let di = bi + 3; di < nd; di++) {
+      const day = dates[di];
+      hist.runs.forEach(r => {
+        if (Number(r[5] || 0) < 3 || r[0] === leader[0] || seenNewNodes[r[0]]) return;
+        const a = pos[r[3]], b = pos[r[4]];
+        if (a === undefined || b === undefined || di < a || di > b || di - a + 1 !== 2) return;
+        seenNewNodes[r[0]] = 1;
+        newCycleNodes.push({ symbol: r[0], name: r[1], day: day, final_lb: Number(r[5] || 0) });
+      });
+    }
     const dayMax = activeAt(bi, 1).reduce((m, c) => Math.max(m, c.lb), 0);
     let badge = "中位快速出清", tone = "done", kind = "中位快速出清";
     if (reversal) {
@@ -6900,7 +6936,8 @@ function relayBreakCaseView(view) {
         lb: Number(leader[5] || 0), date: leader[4]
       },
       leaderEnd: leader[4], breakDate, dayMax, mids, clearOffset,
-      reversal: reversal ? reversal[3] : "", transfer, nodeRows, badge, tone, kind
+      reversal: reversal ? reversal[3] : "", transfer, nodeRows,
+      newCycleNodes: newCycleNodes.slice(-8), badge, tone, kind
     };
     return true;
   });
@@ -6918,6 +6955,10 @@ function relayCaseHtml(c) {
     ? c.nodeRows.slice(0, 6).map(n => '<span class="tag">' + esc(n.name + " · " +
         n.day.slice(5) + " · 2→" + n.final_lb + "板") + "</span>").join("")
     : '<span class="tag">D～D+2 没有后来晋级3板以上的2板</span>';
+  const newCycleText = (c.newCycleNodes || []).length
+    ? c.newCycleNodes.map(n => '<span class="tag">' + esc(n.name + " · " +
+        n.day.slice(5) + " · 2→" + n.final_lb + "板") + "</span>").join("")
+    : '<span class="tag">D+4以后暂无晋级到3板以上的2板</span>';
   const clearText = c.mids.some(m => m.active)
     ? "中位仍未完全出清"
     : (!c.mids.length ? "中位梯队断层" :
@@ -6930,7 +6971,8 @@ function relayCaseHtml(c) {
       esc(c.badge) + '</span></div>' +
     '<div class="relay-case-line"><b>断板日高度：</b>最高' + c.dayMax + '板；' +
       '<b>中位样本：</b>' + midText + '；' + esc(clearText) + '。</div>' +
-    '<div class="relay-case-line"><b>节点窗口：</b></div><div class="relay-case-chips">' + nodeText + '</div>' +
+    '<div class="relay-case-line"><b>补涨节点窗口（D～D+2）：</b></div><div class="relay-case-chips">' + nodeText + '</div>' +
+    '<div class="relay-case-line"><b>新周期节点窗口（D+4起）：</b></div><div class="relay-case-chips">' + newCycleText + '</div>' +
     (c.reversal ? '<div class="relay-case-line"><b>反包：</b>' + esc(c.reversal) + ' 龙头再次涨停，退潮延后。</div>' : '') +
     (c.transfer ? '<div class="relay-case-line"><b>节点转移：</b>' + esc(c.transfer.name) +
       '最终到' + c.transfer.final_lb + '板，超过旧龙头。</div>' : '') +
@@ -6991,6 +7033,17 @@ function renderLeaderRelay() {
   const oldText = view.oldFeedback.length
     ? view.oldFeedback.slice(0, 3).map(x => x.name + " " + x.lb + "板·" + x.status).join("、")
     : "无3板以上旧龙";
+  const heightRows = view.heightRows || [];
+  const heightText = heightRows.length
+    ? heightRows.map(x => x.name + " " + (x.lbc || 1) + "板" +
+        (x.yizi ? "·一字" : "·首封" + hhmm(x.fbt))).join("、")
+    : "暂无";
+  const nodeTicketRows = view.nodeTickets || [];
+  const nodeTicketText = nodeTicketRows.length
+    ? nodeTicketRows.slice(0, 5).map(x => x.name + "·" + x.theme +
+        (x.yizi ? "·一字" : "·首封" + hhmm(x.fbt))).join("、") +
+        (nodeTicketRows.length > 5 ? "，等" + nodeTicketRows.length + "只" : "")
+    : "暂无";
   const candText = view.candidates.length
     ? view.candidates.slice(0, 3).map(x => x.name + "(" + x.role.replace("候选", "") +
         (x.unique ? "·唯一" : "") + ")").join("、")
@@ -7007,12 +7060,18 @@ function renderLeaderRelay() {
       esc(oldText) + '</b><small>' + (view.oldBroken ? "旧高度龙断板，节点开始" : "旧龙仍封，等待断板") +
       (view.prevMidRows.length ? " · " + (view.midCleared ? "中位已出清" : "中位剩" + view.midAlive.length + "只") : "") +
       '</small></div>' +
-    '<div class="relay-step ' + (view.candidates.length ? "done" : (view.oldBroken ? "bad" : "muted")) +
-      '"><span>02 · 接位标的</span><b>' + esc(candText) + '</b><small>只认2板以上且题材扩散</small></div>' +
+    '<div class="relay-step ' + (heightRows.length ? "done" : "muted") +
+      '"><span>02 · 当前接力身位</span><b>' + esc(heightText) +
+      '</b><small>先看市场最高板，再看下方节点候选</small></div>' +
+    '<div class="relay-step ' + (nodeTicketRows.length ? "done" : "muted") +
+      '"><span>03 · 今日节点票（2板）</span><b>' + esc(nodeTicketText) +
+      '</b><small>' + (view.breakAge !== null && view.breakAge >= 4 ? "新周期节点票" : "补涨节点票") +
+      '，与接力身位分开</small></div>' +
     '<div class="relay-step ' + (view.diffusion.length ? "done" : "muted") +
-      '"><span>03 · 题材扩散</span><b>' + esc(diffText) + '</b><small>行业为历史代理，盘中以概念为准</small></div>' +
+      '"><span>04 · 题材扩散</span><b>' + esc(diffText) + '</b><small>与当前接力候选：' +
+      esc(candText) + '</small></div>' +
     '<div class="relay-step ' + (view.node.cls || "muted") +
-      '"><span>04 · 新空间/穿越确认</span><b>' + esc(view.node.title) + '</b><small>' +
+      '"><span>05 · 新空间/穿越确认</span><b>' + esc(view.node.title) + '</b><small>' +
       esc(crossText) + '</small></div>';
   conclusion.className = "relay-conclusion " + view.node.cls;
   conclusion.innerHTML = '<b>' + esc(view.node.title) + '</b><br>' + esc(view.node.text) +
@@ -7051,6 +7110,8 @@ function renderLeaderRelay() {
       esc(view.node.title) + '</b><span>' + esc(view.source || "当日连板历史") +
       ' · ' + esc(view.today) + '</span></div>' +
       relayCaseHtml(caseView) +
+      '<div class="relay-case-line"><b>当前接力身位：</b>' + esc(heightText) + '</div>' +
+      '<div class="relay-case-line"><b>今日节点票：</b>' + esc(nodeTicketText) + '</div>' +
       '<div class="relay-auction-names">' +
       (names.length
         ? names.map(x => '<span class="tag ' + (x.priority >= 3 ? "rec" : "ok") + '">' +
