@@ -3687,7 +3687,136 @@ const KPL_THEME_MAP = window.__KPL_THEMES__ || { stocks: {} };
 function marketThemeOf(row) {
   const symbol = row && (row.symbol || row.sym);
   const hit = symbol && KPL_THEME_MAP.stocks && KPL_THEME_MAP.stocks[symbol];
-  return (hit && hit.theme) || (row && (row.bk || row.industry)) || "其他";
+  return (hit && hit.theme) || (row && (row.bk || row.hybk || row.industry)) || "其他";
+}
+function nodeTicketPrice(row) {
+  const p = Number(row && row.p);
+  if (p > 0) return p > 1000 ? p / 1000 : p;
+  const close = Number(row && row.close);
+  return close > 0 ? close : NaN;
+}
+function nodeTicketHistoryPeak(symbol) {
+  let peak = 0, found = false;
+  const hist = (DATA && DATA.limit_history) || window.__LIMIT_HISTORY__ || null;
+  const runs = hist && Array.isArray(hist.runs) ? hist.runs : [];
+  const asOf = String((DATA && DATA.meta && DATA.meta.date) || (hist && hist.date) || "").slice(0, 10);
+  let cutoff = "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
+    const d = new Date(asOf + "T12:00:00");
+    d.setMonth(d.getMonth() - 6);
+    cutoff = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") +
+      "-" + String(d.getDate()).padStart(2, "0");
+  }
+  runs.forEach(run => {
+    if (!run || String(run[0]) !== String(symbol)) return;
+    if (cutoff && String(run[4] || "") < cutoff) return;
+    found = true;
+    peak = Math.max(peak, Number(run[5]) || 1);
+  });
+  return found ? peak : null;
+}
+/*
+ * 节点票只做推荐，不展示原始2板池。
+ * 硬过滤依据六篇手册：股价>30元、自由流通市值>150亿、
+ * 历史高度达到5板以上的旧高标均淘汰；一字板保留，但只作开板换手观察。
+ * 再按分支题材、封板时间和封板质量，每个分支只留一只，最多推荐3只。
+ */
+function selectNodeTickets(zt, anchorTheme, limit) {
+  const source = (zt || []).filter(x => Number(x.lbc || 1) === 2);
+  const themeCount = {};
+  (zt || []).forEach(x => {
+    const k = String(marketThemeOf(x) || x.bk || x.hybk || "其他").trim() || "其他";
+    themeCount[k] = (themeCount[k] || 0) + 1;
+  });
+  const rejected = { price: 0, cap: 0, history: 0 };
+  let oneWord = 0;
+  const passed = [];
+  source.forEach(x => {
+    if (x.yizi) oneWord++;
+    const price = nodeTicketPrice(x);
+    if (!isFinite(price) || price > 30) { rejected.price++; return; }
+    const cap = Number(x.ltsz || x.floatCap || 0) / 1e8;
+    if (cap > 150) { rejected.cap++; return; }
+    const histPeak = nodeTicketHistoryPeak(x.symbol || (window.__PHONE_ENGINE__ && x.c !== undefined
+      ? window.__PHONE_ENGINE__.symOf(x.c, x.m) : ""));
+    if (histPeak !== null && histPeak >= 5) { rejected.history++; return; }
+    const theme = String(marketThemeOf(x) || x.bk || x.hybk || "其他").trim() || "其他";
+    const themeN = Number(themeCount[theme] || 0);
+    const fbt = Number(x.fbt || 999999);
+    const zbc = Number(x.zbc || 0);
+    const hs = Number(x.hs || 0);
+    const fundRatio = Number(x.fund || 0) && Number(x.ltsz || 0)
+      ? Number(x.fund) / Number(x.ltsz) * 100 : 0;
+    let score = 0;
+    score += Math.min(18, themeN * 3);
+    if (anchorTheme && theme === anchorTheme) score += 8;
+    if (cap >= 25 && cap <= 80) score += 7;
+    else if (cap > 0 && cap < 25) score += 2;
+    score += Math.max(0, 7 - Math.abs(price - 15) * 0.45);
+    if (hs >= 3) score += 5;
+    else if (hs < 1) score -= 3;
+    if (fbt <= 93500) score += 6;
+    else if (fbt > 100000) score -= 4;
+    score += Math.min(8, fundRatio * 20);
+    score -= zbc * 0.8;
+    passed.push(Object.assign({}, x, {
+      theme, themeN, histPeak, price, freeCap: cap, score, watchOnly: !!x.yizi,
+      ticketReason: (x.yizi ? "一字·待开板换手 · " : "") +
+        theme + themeN + "只 · " + (zbc ? "炸" + zbc + "次" : "一次封") +
+        " · 首封" + hhmm(fbt) + " · 换手" + num(hs, 1) + "%"
+    }));
+  });
+  function rank(a, b) {
+    return b.themeN - a.themeN || Number(a.zbc || 0) - Number(b.zbc || 0) ||
+      Number(a.fbt || 999999) - Number(b.fbt || 999999) ||
+      b.score - a.score || String(a.name || "").localeCompare(String(b.name || ""), "zh");
+  }
+  const maxPicks = Math.max(1, Number(limit) || 3);
+  const bestTheme = {};
+  passed.slice().sort(rank).forEach(x => {
+    if (!bestTheme[x.theme]) bestTheme[x.theme] = x;
+  });
+  const branchOrder = Object.keys(bestTheme).sort((a, b) => {
+    const aa = bestTheme[a], bb = bestTheme[b];
+    return bb.themeN - aa.themeN || bb.score - aa.score ||
+      Number(aa.fbt || 999999) - Number(bb.fbt || 999999);
+  });
+  const picks = [], usedSymbol = {}, usedActionTheme = {};
+  const topOne = passed.filter(x => x.yizi).sort(rank)[0] || null;
+  if (topOne) {
+    topOne.pickRole = "一字节点·只观察";
+    picks.push(topOne);
+    usedSymbol[topOne.symbol] = 1;
+    usedActionTheme[topOne.theme] = 1;
+    const alt = passed.filter(x => !x.yizi && x.theme === topOne.theme && !usedSymbol[x.symbol])
+      .sort(rank)[0];
+    if (alt && picks.length < maxPicks) {
+      alt.pickRole = "同分支换手替代";
+      picks.push(alt);
+      usedSymbol[alt.symbol] = 1;
+    }
+  }
+  /* 非一字执行票按分支强度补位；同一分支不再重复占用第三席。 */
+  for (const theme of branchOrder) {
+    if (picks.length >= maxPicks) break;
+    if (usedActionTheme[theme]) continue;
+    const action = passed.filter(x => !x.yizi && x.theme === theme && !usedSymbol[x.symbol])
+      .sort(rank)[0];
+    if (!action) continue;
+    action.pickRole = action.themeN < 3 ? "次强分支换手候选" : "强分支换手候选";
+    picks.push(action);
+    usedSymbol[action.symbol] = 1;
+    usedActionTheme[action.theme] = 1;
+  }
+  const mode = topOne
+    ? (picks.some(x => x.themeN < 3) ? "一字观察 + 同分支替代 + 次强分支补位" :
+      "一字观察 + 同分支换手替代")
+    : "非一字分支换手筛选";
+  const oneWordPicks = picks.filter(x => x.yizi).length;
+  return {
+    picks: picks.slice(0, maxPicks), total: source.length, passed: passed.length,
+    rejected, oneWord, oneWordPicks, mode
+  };
 }
 function sectorCell(row) {
   const hit = row && KPL_THEME_MAP.stocks && KPL_THEME_MAP.stocks[row.symbol || row.sym];
@@ -6464,9 +6593,9 @@ function leaderRelayView() {
   const heightRows = zt.filter(x => Number(x.lbc || 1) === currentMax)
     .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999) ||
       String(a.name || "").localeCompare(String(b.name || ""), "zh"));
-  const nodeTickets = zt.filter(x => Number(x.lbc || 1) === 2)
-    .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999) ||
-      String(a.name || "").localeCompare(String(b.name || ""), "zh"));
+  const nodeTicketRec = selectNodeTickets(zt,
+    String((cycleDragon && cycleDragon.bk) || "").trim(), 3);
+  const nodeTickets = nodeTicketRec.picks;
   const themeCount = {};
   zt.forEach(x => {
     const theme = String(marketThemeOf(x) || "其他").trim() || "其他";
@@ -6478,12 +6607,10 @@ function leaderRelayView() {
 
   const candidates = [];
   if (oldBroken) {
-    zt.forEach(x => {
+    heightRows.filter(x => Number(x.lbc || 1) >= 3 && !x.yizi).slice(0, 3).forEach(x => {
       const lb = Number(x.lbc || 1);
-      if (lb < 2 || x.yizi) return;
       const theme = String(marketThemeOf(x) || "其他").trim() || "其他";
       const sectorN = themeCount[theme] || 0;
-      if (sectorN < 3) return;
       let role = "卡位龙候选";
       if (prevMax >= 5 && lb >= 3 && lb >= currentMax) role = "换手龙/穿越候选";
       else if (prevMax >= 4 && lb >= 3) role = "二波加速候选";
@@ -6491,6 +6618,14 @@ function leaderRelayView() {
         symbol: x.symbol, name: x.name, lb, theme, sectorN,
         role, fbt: x.fbt, fund: x.fund, close: x.close,
         priority: role.indexOf("换手") >= 0 ? 3 : role.indexOf("二波") >= 0 ? 2 : 1
+      });
+    });
+    nodeTickets.forEach(x => {
+      candidates.push({
+        symbol: x.symbol, name: x.name, lb: 2, theme: x.theme,
+        sectorN: x.themeN, role: x.pickRole || (x.yizi ? "节点票·一字待开板" : "推荐节点票"),
+        fbt: x.fbt, fund: x.fund,
+        close: x.close, priority: 2
       });
     });
   }
@@ -6731,6 +6866,8 @@ function nodeExecutionView() {
   const anchorMeta = anchor ? ((DATA.anchor && DATA.anchor.leaders) || [])
     .find(x => x.symbol === anchor.symbol) : null;
   const anchorTheme = String((anchorMeta && anchorMeta.bk) || "").trim();
+  const nodeTicketRec = selectNodeTickets(zt, anchorTheme, 3);
+  const nodeTickets = nodeTicketRec.picks;
   const anchorNow = anchor ? zt.find(x => x.symbol === anchor.symbol) ||
     ((DATA.anchor && DATA.anchor.pool) || []).find(x => x.symbol === anchor.symbol) : null;
   const breakPath = cyc.dragon_active
@@ -6771,17 +6908,17 @@ function nodeExecutionView() {
   } else if (breakAge === 1) {
     title = "龙头断板第1天 · 节点刚形成";
     action = "断板当天停止2进3，不接同属性补涨；重点观察3板以上中位是否开始批量出清。";
-    candidates = two.filter(x => !x.yizi).slice(0, 6);
+    candidates = nodeTickets.slice(0, 3);
   } else if (!midCleared) {
     tone = "wait";
     title = "中位尚未完全出清";
     action = "今天只跟踪各分支身位2板和龙头反馈，不把2进3当作确定性买点；等中位出清或龙头超预期反包。";
-    candidates = two.filter(x => !x.yizi).slice(0, 6);
+    candidates = nodeTickets.slice(0, 3);
   } else if (breakAge >= 4 && !three.length) {
     tone = "done";
     title = "中位已出清 · 进入新周期节点窗口";
     action = "第4天及以后出现的2板属于新周期节点票；明天的执行层级是2进3，不直接追老周期3板、4板。";
-    candidates = two.filter(x => !x.yizi).slice(0, 6);
+    candidates = nodeTickets.slice(0, 3);
     nodeLayer = 3;
   } else if (three.length === 1) {
     tone = "done";
@@ -6800,7 +6937,7 @@ function nodeExecutionView() {
     tone = "done";
     title = "中位已出清 · 节点二板候选已出现";
     action = "明天先执行2进3：多个分支同时存在时分仓跟随，出现同梯队唯一强势票后，次日再考虑3进4加仓。";
-    candidates = two.filter(x => !x.yizi).slice(0, 6);
+    candidates = nodeTickets.slice(0, 3);
     nodeLayer = 3;
   } else {
     tone = "bad";
@@ -6814,8 +6951,10 @@ function nodeExecutionView() {
     String(a.name || "").localeCompare(String(b.name || ""), "zh"));
   const candidateRows = ranked.map(x => ({
     symbol: x.symbol, name: x.name, lb: Number(x.lbc || 1),
-    theme: marketThemeOf(x) || x.bk || "其他",
+    theme: x.theme || marketThemeOf(x) || x.bk || "其他",
     yizi: !!x.yizi, fbt: x.fbt || 0,
+    themeN: Number(x.themeN || 0),
+    reason: x.ticketReason || "",
     path: anchorTheme
       ? ((String(marketThemeOf(x) || x.bk || "其他").trim() === anchorTheme) ? "内切" : "外切")
       : "路径待定"
@@ -6826,12 +6965,18 @@ function nodeExecutionView() {
     cycleOwner, newCycleState, currentMaxBoard,
     heightRows: zt.filter(x => Number(x.lbc || 1) === currentMaxBoard)
       .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999)),
-    nodeTickets: zt.filter(x => Number(x.lbc || 1) === 2).map(x => ({
+    nodeTickets: nodeTickets.map(x => ({
       symbol: x.symbol, name: x.name, lb: 2,
-      theme: marketThemeOf(x) || x.bk || "其他",
-      yizi: !!x.yizi, fbt: x.fbt || 0,
+      theme: x.theme || marketThemeOf(x) || x.bk || "其他",
+      yizi: !!x.yizi, fbt: x.fbt || 0, themeN: x.themeN || 0,
+      reason: x.ticketReason || "", pickRole: x.pickRole || "",
       window: breakAge !== null && breakAge >= 4 ? "新周期节点票" : "补涨节点票"
     })),
+    nodeTicketStats: {
+      total: nodeTicketRec.total, passed: nodeTicketRec.passed,
+      rejected: nodeTicketRec.rejected, oneWord: nodeTicketRec.oneWord,
+      oneWordPicks: nodeTicketRec.oneWordPicks, mode: nodeTicketRec.mode
+    },
     preferred: candidateRows.length === 1 && !candidateRows[0].yizi ? candidateRows[0] : null,
     candidates: candidateRows
   };
@@ -6847,7 +6992,8 @@ function nodeExecutionHtml() {
     : "无有效锚定龙头";
   const tags = view.candidates.length
     ? view.candidates.map(x => '<span class="tag ' + (x.yizi ? "hi" : "ok") + '">' +
-        esc(x.name + " · " + x.lb + "板 · " + x.theme + " · " + x.path + (x.yizi ? " · 一字" : "")) + "</span>").join("")
+        esc((x.pickRole || "") + " · " + x.name + " · " + x.lb + "板 · " + x.theme +
+          " · " + x.path + (x.yizi ? " · 一字" : "")) + "</span>").join("")
     : '<span class="tag">暂无合格候选</span>';
   const preferred = view.preferred
     ? '<div class="node-exec-action">本层级执行首选：<b>' + esc(view.preferred.name) +
@@ -6860,8 +7006,9 @@ function nodeExecutionHtml() {
     : "暂无";
   const nodeTicketText = (view.nodeTickets || []).length
     ? view.nodeTickets.slice(0, 8).map(x => '<span class="tag ' + (x.yizi ? "hi" : "ok") + '">' +
-        esc(x.window + " · " + x.name + " · " + x.theme + (x.yizi ? " · 一字" : "")) + "</span>").join("")
-    : '<span class="tag">今日暂无2板节点票</span>';
+        esc((x.pickRole || "") + " · " + x.name + " · " + x.theme +
+          (x.yizi ? " · 一字·待开板换手" : " · 首封" + hhmm(x.fbt))) + "</span>").join("")
+    : '<span class="tag">今日暂无合格推荐节点票</span>';
   return '<div class="node-exec-card ' + esc(view.tone) + '">' +
     '<div class="node-exec-head"><b>' + esc(view.title) + '</b><span>收盘决策 · ' +
       esc(view.phase) + ' · ' + esc(view.cohortText) + '</span></div>' +
@@ -6869,7 +7016,7 @@ function nodeExecutionHtml() {
     '<div class="node-exec-meta">' + anchorText + ' · ' + esc(view.midText) +
       (view.anchorTheme ? ' · 锚定题材：' + esc(view.anchorTheme) : '') + '</div>' +
     '<div class="node-exec-meta"><b>当前市场高度身位：</b>' + heightText + '</div>' +
-    '<div class="node-exec-names"><b class="k">今日节点票：</b>' + nodeTicketText + '</div>' +
+    '<div class="node-exec-names"><b class="k">推荐节点票：</b>' + nodeTicketText + '</div>' +
     '<div class="node-exec-meta">' + esc(threeMostText(view)) + '</div>' +
     preferred +
     '<div class="node-exec-names">' + tags + '</div>' +
@@ -7043,8 +7190,9 @@ function currentBreakNodeView(items) {
   const currentMax = zt.reduce((m, x) => Math.max(m, Number(x.lbc || 1)), 0);
   const heightRows = zt.filter(x => Number(x.lbc || 1) === currentMax)
     .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999));
-  const nodeTickets = zt.filter(x => Number(x.lbc || 1) === 2)
-    .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999));
+  const nodeTicketRec = selectNodeTickets(zt,
+    String((c.leader && c.leader.bk) || "").trim(), 3);
+  const nodeTickets = nodeTicketRec.picks;
   const nowBySym = {};
   zt.forEach(x => { nowBySym[x.symbol] = 1; });
   const midAlive = (c.mids || []).filter(x => nowBySym[x.symbol]);
@@ -7052,6 +7200,11 @@ function currentBreakNodeView(items) {
   const highBlocked = offset <= 2 && midAlive.length > 0;
   return Object.assign({}, c, {
     today, offset, stage, currentMax, heightRows, nodeTickets, midAlive, highBlocked,
+    nodeTicketStats: {
+      total: nodeTicketRec.total, passed: nodeTicketRec.passed,
+      rejected: nodeTicketRec.rejected, oneWord: nodeTicketRec.oneWord,
+      mode: nodeTicketRec.mode
+    },
     gateText: highBlocked
       ? "中位样本仍有活口，2进3及以上只观察，不自动执行"
       : "可按节点层级观察竞价确认"
@@ -7072,9 +7225,17 @@ function currentBreakNodeHtml(items) {
     ? v.heightRows.map(x => esc(x.name) + (x.lbc || 1) + "板" + (x.yizi ? "（一字）" : "")).join("、")
     : "暂无";
   const nodes = v.nodeTickets.length
-    ? v.nodeTickets.slice(0, 6).map(x => '<span class="tag">' + esc(x.name + " · " + (x.hybk || "其他")) +
-        "</span>").join("") + (v.nodeTickets.length > 6 ? '<span class="tag">等' + v.nodeTickets.length + "只</span>" : "")
-    : '<span class="tag">今日暂无2板节点票</span>';
+    ? v.nodeTickets.map((x, i) => '<span class="tag ' + (x.yizi ? "hi" : "ok") + '">' +
+        esc((i + 1) + ". " + (x.pickRole || "") + " · " + x.name + " · " + (x.theme || x.hybk || "其他") +
+          (x.yizi ? " · 一字·待开板换手" : " · 首封" + hhmm(x.fbt))) + "</span>").join("")
+    : '<span class="tag">今日暂无合格推荐节点票</span>';
+  const ticketNote = v.nodeTickets.length
+    ? "从" + v.nodeTicketStats.total + "只2板中筛出" + v.nodeTickets.length +
+      "只推荐" + (v.nodeTicketStats.oneWordPicks
+        ? "；一字共" + v.nodeTicketStats.oneWord + "只，只保留最强" + v.nodeTicketStats.oneWordPicks +
+          "只观察，其余继续展示同分支换手替代" : "") +
+      "；高价、大市值、旧高标及非最强分支不展示。"
+    : "已检查" + v.nodeTicketStats.total + "只2板，暂无同时通过题材、价格、市值、历史高度和封板质量筛选的标的。";
   return '<div class="relay-auction-card">' +
     '<div class="relay-auction-head"><b>当前断板节点 · ' +
       esc(leaders.map(x => x.name + x.lb + "板").join("、")) + '</b><span>' +
@@ -7084,7 +7245,8 @@ function currentBreakNodeHtml(items) {
       '；' + esc(v.gateText) + '。</div>' +
     '<div class="relay-case-line"><b>中位样本：</b>' + mids + '。</div>' +
     '<div class="relay-case-line"><b>当前接力身位：</b>' + heights + '。</div>' +
-    '<div class="relay-case-line"><b>今日2板节点票：</b></div><div class="relay-case-chips">' + nodes + '</div>' +
+    '<div class="relay-case-line"><b>推荐节点票：</b></div><div class="relay-case-chips">' + nodes + '</div>' +
+    '<div class="relay-auction-note">' + esc(ticketNote) + '</div>' +
     '</div>';
 }
 
@@ -7166,8 +7328,9 @@ function renderLeaderRelay() {
     : "暂无";
   const nodeTicketRows = (currentNode && currentNode.nodeTickets) || view.nodeTickets || [];
   const nodeTicketText = nodeTicketRows.length
-    ? nodeTicketRows.slice(0, 5).map(x => x.name + "·" + (x.theme || x.hybk || "其他") +
-        (x.yizi ? "·一字" : "·首封" + hhmm(x.fbt))).join("、") +
+    ? nodeTicketRows.slice(0, 5).map(x => (x.pickRole ? x.pickRole + "·" : "") +
+        x.name + "·" + (x.theme || x.hybk || "其他") +
+        (x.yizi ? "·一字待开板换手" : "·首封" + hhmm(x.fbt))).join("、") +
         (nodeTicketRows.length > 5 ? "，等" + nodeTicketRows.length + "只" : "")
     : "暂无";
   const candText = view.candidates.length
@@ -7190,7 +7353,7 @@ function renderLeaderRelay() {
       '"><span>02 · 当前接力身位</span><b>' + esc(heightText) +
       '</b><small>先看市场最高板，再看下方节点候选</small></div>' +
     '<div class="relay-step ' + (nodeTicketRows.length ? "done" : "muted") +
-      '"><span>03 · 今日节点票（2板）</span><b>' + esc(nodeTicketText) +
+      '"><span>03 · 推荐节点票（2板）</span><b>' + esc(nodeTicketText) +
       '</b><small>' + (currentNode && currentNode.offset >= 3 ? "新周期节点票" : "补涨节点票") +
       '，与接力身位分开</small></div>' +
     '<div class="relay-step ' + (view.diffusion.length ? "done" : "muted") +
@@ -7238,7 +7401,7 @@ function renderLeaderRelay() {
       ' · ' + esc(view.today) + '</span></div>' +
       relayCaseHtml(caseView) +
       '<div class="relay-case-line"><b>当前接力身位：</b>' + esc(heightText) + '</div>' +
-      '<div class="relay-case-line"><b>今日节点票：</b>' + esc(nodeTicketText) + '</div>' +
+      '<div class="relay-case-line"><b>推荐节点票：</b>' + esc(nodeTicketText) + '</div>' +
       '<div class="relay-auction-names">' +
       (names.length
         ? names.map(x => '<span class="tag ' + (x.priority >= 3 ? "rec" : "ok") + '">' +
