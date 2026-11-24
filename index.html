@@ -3756,6 +3756,25 @@ function nodeTicketPrice(row) {
   const close = Number(row && row.close);
   return close > 0 ? close : NaN;
 }
+function boardCountAt(row, date) {
+  const hist = DATA && DATA.limit_history;
+  const day = String(date || (DATA && DATA.meta && DATA.meta.date) || "");
+  const symbol = row && (row.symbol || (row.c !== undefined && window.__PHONE_ENGINE__
+    ? window.__PHONE_ENGINE__.symOf(row.c, row.m) : ""));
+  if (hist && Array.isArray(hist.dates) && Array.isArray(hist.runs) && day) {
+    const di = hist.dates.indexOf(day);
+    if (di >= 0) {
+      for (const run of hist.runs) {
+        if (!run || String(run[0]) !== String(symbol)) continue;
+        const a = hist.dates.indexOf(run[3]);
+        const b = hist.dates.indexOf(run[4]);
+        if (a >= 0 && b >= a && di >= a && di <= b) return di - a + 1;
+      }
+    }
+  }
+  return Number((row && (row.lbc || row.lb ||
+    (row.zttj && row.zttj.ct))) || 1);
+}
 function nodeTicketHistoryPeak(symbol) {
   let peak = 0, found = false;
   const hist = (DATA && DATA.limit_history) || window.__LIMIT_HISTORY__ || null;
@@ -3783,7 +3802,7 @@ function nodeTicketHistoryPeak(symbol) {
  * 再按分支题材、封板时间和封板质量，每个分支只留一只，最多推荐3只。
  */
 function selectNodeTickets(zt, anchorTheme, limit) {
-  const source = (zt || []).filter(x => Number(x.lbc || 1) === 2);
+  const source = (zt || []).filter(x => Number(x.lbc || x.lb || 1) === 2);
   const themeCount = {};
   (zt || []).forEach(x => {
     const k = String(marketThemeOf(x) || x.bk || x.hybk || "其他").trim() || "其他";
@@ -5264,12 +5283,16 @@ function auctionRiskHint(quotes, dec) {
 function cyclePoolRows(items) {
   const E = window.__PHONE_ENGINE__;
   const src = items || ((DATA && DATA.anchor && DATA.anchor.pool) || []);
-  return (src || []).filter(x => !x.group || x.group === "涨停").map(x => ({
-    symbol: x.symbol || (E && x.c !== undefined ? E.symOf(x.c, x.m) : ""),
-    name: x.name || x.n || "未命名",
-    lb: Number(x.lbc || x.lb || ((x.zttj && x.zttj.ct) || 1)),
-    yizi: !!x.yizi
-  })).filter(x => x.symbol);
+  return (src || []).filter(x => !x.group || x.group === "涨停").map(x => {
+    const lb = boardCountAt(x, DATA && DATA.meta && DATA.meta.date);
+    return Object.assign({}, x, {
+      symbol: x.symbol || (E && x.c !== undefined ? E.symOf(x.c, x.m) : ""),
+      name: x.name || x.n || "未命名",
+      lb, lbc: lb,
+      theme: x.theme || marketThemeOf(x),
+      yizi: !!x.yizi
+    });
+  }).filter(x => x.symbol);
 }
 
 function cycleMidSummary(items) {
@@ -6198,11 +6221,14 @@ function renderReviewDashboard() {
   const highPcts = highLeaders.map(x => x.today_pct).filter(valid);
   const highAvg = highPcts.length ? highPcts.reduce((a, b) => a + b, 0) / highPcts.length : null;
   const ztNow = (DATA.anchor && DATA.anchor.pool || []).filter(x => x.group === "涨停");
-  const high3 = ztNow.filter(x => (x.lbc || 1) >= 3);
-  const maxBoardNow = high3.reduce((n, x) => Math.max(n, Number(x.lbc || 1)), 0);
-  const maxNames = high3.filter(x => Number(x.lbc || 1) === maxBoardNow)
+  const high3 = ztNow.filter(x => boardCountAt(x, DATA.meta && DATA.meta.date) >= 3);
+  const maxBoardNow = high3.reduce((n, x) =>
+    Math.max(n, boardCountAt(x, DATA.meta && DATA.meta.date)), 0);
+  const maxNames = high3.filter(x =>
+    boardCountAt(x, DATA.meta && DATA.meta.date) === maxBoardNow)
     .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999)).slice(0, 3)
-    .map(x => esc(x.name || "") + "(" + (x.lbc || 1) + "板)").join("、");
+    .map(x => esc(x.name || "") + "(" +
+      boardCountAt(x, DATA.meta && DATA.meta.date) + "板)").join("、");
   const idx = m.indexes || [];
   const idxAvg = valid(m.index_avg) ? Number(m.index_avg) : null;
   const idxDetail = idx.map(x => x.name + " " + pct(x.pct, 2)).join("；");
@@ -6694,8 +6720,9 @@ function leaderRelayView() {
   const midAlive = prevMidRows.filter(x => !!ztMap[x.symbol]);
   const midCleared = prevMidRows.length > 0 && midAlive.length === 0;
   const marketNode = prevMax >= 5 && oldBroken;
-  const currentMax = zt.reduce((n, x) => Math.max(n, Number(x.lbc || 1)), 0);
-  const heightRows = zt.filter(x => Number(x.lbc || 1) === currentMax)
+  const currentMax = zt.reduce((n, x) => Math.max(n, boardCountAt(x, today)), 0);
+  const heightRows = zt.filter(x => boardCountAt(x, today) === currentMax)
+    .map(x => Object.assign({}, x, { lbc: boardCountAt(x, today) }))
     .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999) ||
       String(a.name || "").localeCompare(String(b.name || ""), "zh"));
   const nodeTicketRec = selectNodeTickets(zt,
@@ -6982,7 +7009,8 @@ function nodeExecutionView() {
       : (anchorNow && Number(anchorNow.today_pct) >= 0)
         ? "断板后收红，有修复但尚未反包"
         : "断板后未反包，等待中位出清";
-  const currentMaxBoard = zt.reduce((m, p) => Math.max(m, Number(p.lbc || 1)), 0);
+  const currentMaxBoard = zt.reduce((m, p) =>
+    Math.max(m, boardCountAt(p, DATA && DATA.meta && DATA.meta.date)), 0);
   const cycleOwner = anchor
     ? ("仍处 " + anchor.name + " 周期" +
       (breakAge ? "（旧龙头退潮第" + breakAge + "天）" : "（龙头延续中）"))
@@ -7068,7 +7096,11 @@ function nodeExecutionView() {
     tone, title, action, anchor, breakAge, phase, midCleared, midText, layer: nodeLayer,
     anchorTheme, cohortText, breakPath,
     cycleOwner, newCycleState, currentMaxBoard,
-    heightRows: zt.filter(x => Number(x.lbc || 1) === currentMaxBoard)
+    heightRows: zt.filter(x =>
+      boardCountAt(x, DATA && DATA.meta && DATA.meta.date) === currentMaxBoard)
+      .map(x => Object.assign({}, x, {
+        lbc: boardCountAt(x, DATA && DATA.meta && DATA.meta.date)
+      }))
       .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999)),
     nodeTickets: nodeTickets.map(x => ({
       symbol: x.symbol, name: x.name, lb: 2,
@@ -7289,8 +7321,8 @@ function currentBreakNodeView(items) {
   const offset = pos[today] !== undefined && pos[c.breakDate] !== undefined
     ? pos[today] - pos[c.breakDate] : 0;
   const zt = cyclePoolRows(items || ((DATA.anchor && DATA.anchor.pool) || []));
-  const currentMax = zt.reduce((m, x) => Math.max(m, Number(x.lbc || 1)), 0);
-  const heightRows = zt.filter(x => Number(x.lbc || 1) === currentMax)
+  const currentMax = zt.reduce((m, x) => Math.max(m, Number(x.lb || 1)), 0);
+  const heightRows = zt.filter(x => Number(x.lb || 1) === currentMax)
     .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999));
   const nodeTicketRec = selectNodeTickets(zt,
     String((c.leader && c.leader.bk) || "").trim(), 3);
@@ -7339,11 +7371,15 @@ function currentCaseCardHtml(v) {
   const sourceDataBadge = sourceDay
     ? '<span class="tag ok">打板客数据已接入</span>'
     : '<span class="tag">打板客数据待同步</span>';
-  const liveMax = pool.reduce((n, x) => Math.max(n, Number(x.lbc || 1)), 0);
+  const liveMax = pool.reduce((n, x) =>
+    Math.max(n, boardCountAt(x, v.today || (DATA.meta && DATA.meta.date))), 0);
   const marketHeightRows = (v.heightRows && v.heightRows.length)
     ? v.heightRows
     : pool.filter(x => !x.group || x.group === "涨停")
-      .filter(x => Number(x.lbc || 1) === liveMax);
+      .filter(x => boardCountAt(x, v.today || (DATA.meta && DATA.meta.date)) === liveMax)
+      .map(x => Object.assign({}, x, {
+        lbc: boardCountAt(x, v.today || (DATA.meta && DATA.meta.date))
+      }));
   const marketHeightText = relayHeightLabel(marketHeightRows);
   const aliveSet = {};
   (v.midAlive || []).forEach(x => { aliveSet[x.symbol] = 1; });
