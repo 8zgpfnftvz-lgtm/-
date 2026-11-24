@@ -6692,7 +6692,7 @@ function leaderRelayView() {
     today, prev, prevMax, currentMax, oldBroken, oldFeedback,
     marketNode, prevMidRows, midAlive, midCleared,
     source, anchor: cycleDragon,
-    currentMax, heightRows, nodeTickets,
+    currentMax, heightRows, nodeTickets, themeCount,
     iceThreeCount: zt.filter(x => Number(x.lbc || 1) === 3).length,
     candidates, diffusion, node
   };
@@ -7217,7 +7217,7 @@ function currentBreakNodeView(items) {
     nodeTicketStats: {
       total: nodeTicketRec.total, passed: nodeTicketRec.passed,
       rejected: nodeTicketRec.rejected, oneWord: nodeTicketRec.oneWord,
-      mode: nodeTicketRec.mode
+      oneWordPicks: nodeTicketRec.oneWordPicks, mode: nodeTicketRec.mode
     },
     gateText: highBlocked
       ? "中位样本仍有活口，2进3及以上只观察，不自动执行"
@@ -7347,10 +7347,10 @@ function renderLeaderRelay() {
         (x.yizi ? "·一字待开板换手" : "·首封" + hhmm(x.fbt))).join("、") +
         (nodeTicketRows.length > 5 ? "，等" + nodeTicketRows.length + "只" : "")
     : "暂无";
-  const candText = view.candidates.length
-    ? view.candidates.slice(0, 3).map(x => x.name + "(" + x.role.replace("候选", "") +
-        (x.unique ? "·唯一" : "") + ")").join("、")
-    : "暂无接位标的";
+  const candText = heightRows.length
+    ? heightRows.slice(0, 3).map(x => x.name + "(" + (x.lbc || 1) + "板" +
+        (heightRows.length === 1 ? "·唯一" : "·并列") + ")").join("、")
+    : "暂无市场最高接力位";
   const diffText = view.diffusion.length
     ? view.diffusion.slice(0, 3).map(x => x.theme + x.count + "只").join("、")
     : "没有3只以上同题材扩散";
@@ -7386,7 +7386,15 @@ function renderLeaderRelay() {
           (caseView.clearOffset === null ? "中位样本待确认" : "中位最晚在D+" + caseView.clearOffset + "退出")))
       : "暂无完整案例") +
     '<br><b>穿越：</b>' + esc(crossText);
-  const rows = view.candidates.map((x, i) => Object.assign({ rank: i + 1 }, x));
+  const rows = heightRows.slice(0, 3).map((x, i) => {
+    const theme = String(marketThemeOf(x) || x.bk || x.hybk || "其他").trim() || "其他";
+    return {
+      rank: i + 1, role: heightRows.length === 1 ? "当前唯一接力位" : "并列最高接力位",
+      name: x.name, lb: Number(x.lbc || 1), unique: heightRows.length === 1,
+      theme, sectorN: Number((view.themeCount || {})[theme] || 0),
+      fbt: x.fbt, fund: x.fund, close: x.close, priority: 3
+    };
+  });
   table("t_relay_candidates", rows, [
     { key: "role", label: "接力位", left: true, render: r => '<span class="tag ' + (r.priority >= 3 ? "rec" : r.priority === 2 ? "hi" : "ok") + '">' + esc(r.role) + "</span>" },
     { key: "name", label: "候选", left: true },
@@ -7408,7 +7416,7 @@ function renderLeaderRelay() {
   ], { sort: (a, b) => a.rank - b.rank, rowCls: r => r.priority >= 3 ? "rec" : "" });
 
   if (hint) {
-    const names = view.candidates.slice(0, 4);
+    const names = heightRows.slice(0, 3);
     hint.innerHTML =
       '<div class="relay-auction-card"><div class="relay-auction-head"><b>当前断板节点 · ' +
       esc(currentNodeTitle) + '</b><span>' + esc(view.source || "当日连板历史") +
@@ -7418,8 +7426,8 @@ function renderLeaderRelay() {
       '<div class="relay-case-line"><b>推荐节点票：</b>' + esc(nodeTicketText) + '</div>' +
       '<div class="relay-auction-names">' +
       (names.length
-        ? names.map(x => '<span class="tag ' + (x.priority >= 3 ? "rec" : "ok") + '">' +
-            esc(x.name + " · " + x.role.replace("候选", "") + " · " + x.lb + "板") + '</span>').join("")
+        ? names.map(x => '<span class="tag rec">' +
+            esc(x.name + " · 当前市场最高 · " + (x.lbc || 1) + "板") + '</span>').join("")
         : '<span class="tag ' + (currentNode && currentNode.midAlive.length ? "bad" : "") + '">' +
           esc(currentNodeTitle) + '</span>') +
       '</div><div class="relay-auction-note">' +
