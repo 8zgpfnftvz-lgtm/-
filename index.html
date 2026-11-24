@@ -4746,7 +4746,7 @@ function auctionRowsFromQuotes(pool, quotes) {
       symbol: p.symbol, name: p.name || q.name, code: String(p.symbol).slice(2).toUpperCase(),
       kind: kind, kindLabel: AUC_RULES[kind].label, rule: AUC_RULES[kind].desc,
       pre: q.preClose, price: price, pctv: pctv, lv: aucJudge(kind, pctv),
-      lb: p.lbc || 1, _p: p,
+      lb: p.lbc || 1, _p: p
     });
   });
   return rows;
@@ -4765,6 +4765,9 @@ async function loadAuction() {
     AUC.busy = false;
     return;
   }
+  AUC.currentNode = currentBreakNodeView();
+  const nodeHint = $("#relayAuctionHint");
+  if (nodeHint) nodeHint.innerHTML = currentBreakNodeHtml();
   meta.textContent = "锚定池 " + pool.date + " · " + pool.items.length + " 只 · " + aucClockText();
   if (INLINE) {
     cardBox.innerHTML = card("静态快照没有实时行情", "无法用于竞价",
@@ -4885,7 +4888,10 @@ async function loadAuction() {
   const playable = picks.filter(p => p.score >= REC_MIN);
   const recRank = {};
   if (playable[0]) recRank[playable[0].symbol] = 1;
-  const execCandidate = playable[0] && !playable[0].yizi ? playable[0] : null;
+  const nodeView = AUC.currentNode || currentBreakNodeView();
+  const blockedByNode = !!(nodeView && nodeView.highBlocked &&
+    playable[0] && Number(playable[0].lb || 1) >= 2);
+  const execCandidate = !blockedByNode && playable[0] && !playable[0].yizi ? playable[0] : null;
   const watchRank = {};
   playable.slice(1, 3).forEach((p, i) => { watchRank[p.symbol] = i + 2; });
   // 高度板（3板及以上）就算分数没到 7，也单独标出来观察：3进4/4进5/6板以上不能被漏掉
@@ -4919,7 +4925,8 @@ async function loadAuction() {
         (recRank[r.symbol]
           ? '<span class="tag rec">' +
             (execCandidate && execCandidate.symbol === r.symbol
-              ? "★ 执行候选（第1名）" : "★ 强度第一 · 一字不追") + "</span> "
+              ? "★ 执行候选（第1名）" :
+              (blockedByNode ? "★ 强度第一 · 节点未过" : "★ 强度第一 · 一字不追")) + "</span> "
           : (watchRank[r.symbol]
             ? '<span class="tag">第' + watchRank[r.symbol] + '名 · 只观察</span> '
           : (hiRank[r.symbol]
@@ -4964,17 +4971,19 @@ async function loadAuction() {
     note.innerHTML = "<b>评分第一名只是排序，不是必买。</b> 今天<b>不打板</b>：最高分是 " + esc(picks[0].name) + "（" + picks[0].score + " 分，" +
       esc(picks[0].why) + "），没到 <b>" + REC_MIN + " 分</b>门槛。" +
       "参考：近半年按 7 分门槛只打首选，胜率 57.3%、均值 +0.60%；不到门槛的样本平均是负的。";
+  } else if (blockedByNode) {
+    const a = playable[0];
+    note.innerHTML = "<b>当前节点门控未通过：首阴后中位仍未出清。</b> " +
+      "强度第一 <b>" + esc(a.name) + "</b>（" + a.lb + "板，" + a.score + "分）只能观察，" +
+      "不自动进入执行清单。先等D+1/D+2中位补跌或龙头修复，再决定是否接力。";
   } else {
     const a = playable[0], watch = playable.slice(1, 3);
-    note.innerHTML = "<b>执行口径：只优先非一字第1名；第2、3名只观察，不自动进入执行清单。</b> " +
-      "排序第一：<b>★" + esc(a.name) + "</b>（" + a.lb + "板·" +
-      esc(a.bk) + "，" + a.lv + " " + pct(a.pctv, 2) + "，" + a.score + " 分）" +
-      (a.yizi
-        ? "是<b>一字板，按手册只观察不追</b>，不自动送入执行清单；必须等开板换手、承接和回封确认。"
-        : "，打板价 <b>" + num(a.hit) + "</b>、止损 " + num(a.stop) + "。") +
-      (watch.length ? " 只观察 " + watch.map((p, i) =>
-        "第" + (i + 2) + "名 " + esc(p.name) + " " + num(p.hit)).join("、") + "。" : "") +
-      "<br>非一字候选只在<b>封板前挂涨停价排队</b>，收盘没封住次日不管盈亏都走，封住后次日冲高 +3~5% 也走。" +
+    note.innerHTML = "<b>执行口径：只优先第1名；第2、3名只观察，不自动进入执行清单。</b> " +
+      "第1名也只是候选，9:25确认后才能执行：<b>★" + esc(a.name) + "</b>（" + a.lb + "板·" +
+      esc(a.bk) + "，" + a.lv + " " + pct(a.pctv, 2) + "，" + a.score + " 分）打板价 <b>" + num(a.hit) + "</b>、止损 " +
+      num(a.stop) + (watch.length ? "；只观察 " + watch.map((p, i) =>
+        "第" + (i + 2) + "名 " + esc(p.name) + " " + num(p.hit)).join("、") : "") +
+      "。<br>只在<b>封板前挂涨停价排队</b>，收盘没封住次日不管盈亏都走，封住后次日冲高 +3~5% 也走。" +
       "门槛 " + REC_MIN + " 分（≈3板以上＋竞价超预期＋题材有跟风）。参考：近半年按 7 分门槛只打首选，胜率 57.3%、均值 +0.60%。";
   }
   if (hiPicks.length) {
@@ -5000,7 +5009,9 @@ async function loadAuction() {
   // 只在竞价时段（9:15–9:35）生成/更新今日执行清单，避免盘中/盘后用收盘价覆盖
   const _n = new Date(), _m = _n.getHours() * 60 + _n.getMinutes();
   if (AUC.forcePlan || (_m >= 555 && _m <= 575)) {
-    try { saveExecPlan(execCandidate ? [execCandidate] : []); } catch (e) { }
+    if (execCandidate) {
+      try { saveExecPlan([execCandidate]); } catch (e) { }
+    }
   }
   AUC.busy = false;
 }
@@ -5920,6 +5931,15 @@ function renderOverview() {
 function renderReviewDashboard() {
   if (!DATA) return;
   const m = DATA.market || {}, cyc = DATA.cycle || {};
+  const currentCase = currentBreakNodeView();
+  const currentNodeLeaders = currentCase && currentCase.leaders
+    ? currentCase.leaders.map(x => x.name + x.lb + "板").join("、") : "";
+  const currentNodeMid = currentCase
+    ? (currentCase.midAlive.length
+      ? "中位未出清（" + currentCase.midAlive.map(x => x.name).join("、") + "仍连板）"
+      : (currentCase.clearOffset !== null && currentCase.clearOffset <= 2
+        ? "中位快速出清" : "中位已出清"))
+    : cycleMidSummary();
   const gate = m.gate || "yellow";
   const valid = v => v !== null && v !== undefined && v !== "" && !isNaN(v);
   const totalBreadth = (m.up || 0) + (m.down || 0);
@@ -5983,11 +6003,14 @@ function renderReviewDashboard() {
         esc(cyc.substate) + '</span>' : '') + '</div>' +
     '<div class="review-cycle-row"><span>建议仓位</span><b>' + esc(cyc.position || "-") + '</b></div>' +
     '<div class="review-cycle-row"><span>龙头/空间板</span><b>' +
-      esc(cyc.dragon ? cyc.dragon.name + " " + cyc.dragon.lb + "板" : "-") + '</b></div>' +
+      esc(currentNodeLeaders || (cyc.dragon ? cyc.dragon.name + " " + cyc.dragon.lb + "板" : "-")) + '</b></div>' +
     '<div class="review-cycle-row"><span>断板天数</span><b>' +
-      (cyc.break_age === null || cyc.break_age === undefined ? "-" : cyc.break_age + "日") + '</b></div>' +
+      (currentCase ? (currentCase.offset + 1) + "日" :
+        (cyc.break_age === null || cyc.break_age === undefined ? "-" : cyc.break_age + "日")) + '</b></div>' +
     '<div class="review-cycle-row"><span>中位出清</span><b id="reviewMidClear">' +
-      esc(cycleMidSummary()) + '</b></div>' +
+      esc(currentNodeMid) + '</b></div>' +
+    '<div class="review-cycle-row"><span>当前高度</span><b>' +
+      esc(currentCase ? currentCase.currentMax + "板" : "-") + '</b></div>' +
     '<div class="review-cycle-row"><span>一字高标排除</span><b>' + int(cyc.excluded_one_word || 0) + '只</b></div>';
   let execTone = "warn", execTitle = "等待9:25复核", execText = "当前只有收盘预案，不能直接开仓；9:25根据情绪锚定池强弱决定。";
   if (gate === "red" || /退潮/.test(cyc.state || "")) {
@@ -5998,6 +6021,11 @@ function renderReviewDashboard() {
     execTone = "good";
     execTitle = "可准备执行，但仍需9:25确认";
     execText = "只聚焦主线龙头和最强晋级层；竞价不及预期立即取消。";
+  }
+  if (currentCase && currentCase.highBlocked) {
+    execTone = "bad";
+    execTitle = "当前节点未通过：首阴后中位未出清";
+    execText = "5板龙头已断板，但中位样本仍有活口；2进3及以上只观察，等D+1/D+2中位补跌或龙头修复。";
   }
   const annual = annualCycleData();
   if (annual && annual.stage >= 4 && execTone === "good") {
@@ -6935,6 +6963,10 @@ function relayBreakCaseView(view) {
         symbol: leader[0], name: leader[1], theme: String(leader[6] || leader[2] || "其他"),
         lb: Number(leader[5] || 0), date: leader[4]
       },
+      leaders: leaders.map(r => ({
+        symbol: r[0], name: r[1], theme: String(r[6] || r[2] || "其他"),
+        lb: Number(r[5] || 0), date: r[4]
+      })),
       leaderEnd: leader[4], breakDate, dayMax, mids, clearOffset,
       reversal: reversal ? reversal[3] : "", transfer, nodeRows,
       newCycleNodes: newCycleNodes.slice(-8), badge, tone, kind
@@ -6976,6 +7008,63 @@ function relayCaseHtml(c) {
     (c.reversal ? '<div class="relay-case-line"><b>反包：</b>' + esc(c.reversal) + ' 龙头再次涨停，退潮延后。</div>' : '') +
     (c.transfer ? '<div class="relay-case-line"><b>节点转移：</b>' + esc(c.transfer.name) +
       '最终到' + c.transfer.final_lb + '板，超过旧龙头。</div>' : '') +
+    '</div>';
+}
+
+function currentBreakNodeView() {
+  const c = relayBreakCaseView({});
+  if (!c) return null;
+  const hist = DATA && DATA.limit_history;
+  const dates = ((hist && hist.dates) || []).slice();
+  const today = DATA && DATA.meta && DATA.meta.date;
+  if (today && dates.indexOf(today) < 0) dates.push(today);
+  dates.sort();
+  const pos = {};
+  dates.forEach((d, i) => { pos[d] = i; });
+  const offset = pos[today] !== undefined && pos[c.breakDate] !== undefined
+    ? pos[today] - pos[c.breakDate] : 0;
+  const zt = ((DATA.anchor && DATA.anchor.pool) || []).filter(x => x.group === "涨停");
+  const currentMax = zt.reduce((m, x) => Math.max(m, Number(x.lbc || 1)), 0);
+  const heightRows = zt.filter(x => Number(x.lbc || 1) === currentMax)
+    .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999));
+  const nodeTickets = zt.filter(x => Number(x.lbc || 1) === 2)
+    .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999));
+  const midAlive = (c.mids || []).filter(x => x.active);
+  const stage = offset <= 0 ? "首阴第1天" : "首阴第" + (offset + 1) + "天";
+  const highBlocked = offset <= 2 && midAlive.length > 0;
+  return Object.assign({}, c, {
+    today, offset, stage, currentMax, heightRows, nodeTickets, midAlive, highBlocked,
+    gateText: highBlocked
+      ? "中位样本仍有活口，2进3及以上只观察，不自动执行"
+      : "可按节点层级观察竞价确认"
+  });
+}
+
+function currentBreakNodeHtml() {
+  const v = currentBreakNodeView();
+  if (!v) return "";
+  const leaders = (v.leaders || [v.leader]).filter(Boolean);
+  const mids = v.mids.length
+    ? v.mids.map(x => esc(x.name) + x.lb + "板" +
+        (x.active ? "（仍在连板）" : (x.break_date ? "（" + esc(x.break_date.slice(5)) + "断）" : ""))).join("、")
+    : "断板日无3/4板中位样本";
+  const heights = v.heightRows.length
+    ? v.heightRows.map(x => esc(x.name) + (x.lbc || 1) + "板" + (x.yizi ? "（一字）" : "")).join("、")
+    : "暂无";
+  const nodes = v.nodeTickets.length
+    ? v.nodeTickets.slice(0, 6).map(x => '<span class="tag">' + esc(x.name + " · " + (x.hybk || "其他")) +
+        "</span>").join("") + (v.nodeTickets.length > 6 ? '<span class="tag">等' + v.nodeTickets.length + "只</span>" : "")
+    : '<span class="tag">今日暂无2板节点票</span>';
+  return '<div class="relay-auction-card">' +
+    '<div class="relay-auction-head"><b>当前断板节点 · ' +
+      esc(leaders.map(x => x.name + x.lb + "板").join("、")) + '</b><span>' +
+      esc(v.breakDate + " · " + v.stage) + '</span></div>' +
+    '<div class="relay-case-line"><b>节点状态：</b>' +
+      esc(v.midAlive.length ? "首阴形成，中位未出清" : (v.clearOffset !== null && v.clearOffset <= 2 ? "首阴形成，中位快速出清" : "首阴形成，中位已出清")) +
+      '；' + esc(v.gateText) + '。</div>' +
+    '<div class="relay-case-line"><b>中位样本：</b>' + mids + '。</div>' +
+    '<div class="relay-case-line"><b>当前接力身位：</b>' + heights + '。</div>' +
+    '<div class="relay-case-line"><b>今日2板节点票：</b></div><div class="relay-case-chips">' + nodes + '</div>' +
     '</div>';
 }
 
@@ -7027,20 +7116,37 @@ function renderLeaderRelay() {
     if (hint) hint.innerHTML = nodeExecutionHtml();
     return;
   }
-  const caseView = relayBreakCaseView(view);
-  badge.textContent = view.node.title;
-  badge.className = "review-badge " + (view.node.cls === "done" ? "green" : view.node.cls === "bad" ? "red" : "");
-  const oldText = view.oldFeedback.length
-    ? view.oldFeedback.slice(0, 3).map(x => x.name + " " + x.lb + "板·" + x.status).join("、")
-    : "无3板以上旧龙";
-  const heightRows = view.heightRows || [];
+  const currentNode = currentBreakNodeView();
+  const caseView = currentNode || relayBreakCaseView(view);
+  const currentNodeTitle = currentNode
+    ? (currentNode.midAlive.length
+      ? currentNode.stage + " · 中位未出清"
+      : (currentNode.clearOffset !== null && currentNode.clearOffset <= 2
+        ? currentNode.stage + " · 中位快速出清" : currentNode.stage + " · 中位已出清"))
+    : view.node.title;
+  badge.textContent = currentNodeTitle;
+  badge.className = "review-badge " +
+    (currentNode && currentNode.midAlive.length ? "red" :
+      (view.node.cls === "done" ? "green" : view.node.cls === "bad" ? "red" : ""));
+  const poolBySym = {};
+  ((DATA.anchor && DATA.anchor.pool) || []).forEach(x => { poolBySym[x.symbol] = x; });
+  const oldText = currentNode
+    ? currentNode.leaders.map(x => {
+        const row = poolBySym[x.symbol];
+        return x.name + " " + x.lb + "板·" +
+          (row ? (row.group === "涨停" ? "仍涨停" : row.group || "断板") : "断板");
+      }).join("、")
+    : (view.oldFeedback.length
+      ? view.oldFeedback.slice(0, 3).map(x => x.name + " " + x.lb + "板·" + x.status).join("、")
+      : "无3板以上旧龙");
+  const heightRows = (currentNode && currentNode.heightRows) || view.heightRows || [];
   const heightText = heightRows.length
     ? heightRows.map(x => x.name + " " + (x.lbc || 1) + "板" +
         (x.yizi ? "·一字" : "·首封" + hhmm(x.fbt))).join("、")
     : "暂无";
-  const nodeTicketRows = view.nodeTickets || [];
+  const nodeTicketRows = (currentNode && currentNode.nodeTickets) || view.nodeTickets || [];
   const nodeTicketText = nodeTicketRows.length
-    ? nodeTicketRows.slice(0, 5).map(x => x.name + "·" + x.theme +
+    ? nodeTicketRows.slice(0, 5).map(x => x.name + "·" + (x.theme || x.hybk || "其他") +
         (x.yizi ? "·一字" : "·首封" + hhmm(x.fbt))).join("、") +
         (nodeTicketRows.length > 5 ? "，等" + nodeTicketRows.length + "只" : "")
     : "暂无";
@@ -7056,25 +7162,26 @@ function renderLeaderRelay() {
        "板，断板后最高" + cross.postPeak + "板")
     : "尚无5板以上原高标断板，暂不判断穿越";
   chain.innerHTML = relayCaseHtml(caseView) +
-    '<div class="relay-step ' + (view.oldBroken ? "done" : "wait") + '"><span>01 · 旧龙反馈</span><b>' +
-      esc(oldText) + '</b><small>' + (view.oldBroken ? "旧高度龙断板，节点开始" : "旧龙仍封，等待断板") +
-      (view.prevMidRows.length ? " · " + (view.midCleared ? "中位已出清" : "中位剩" + view.midAlive.length + "只") : "") +
+    '<div class="relay-step ' + (currentNode ? "done" : "wait") + '"><span>01 · 当前首阴</span><b>' +
+      esc(oldText) + '</b><small>' + esc(currentNode ? currentNode.stage + "，节点已形成" : "旧龙仍封，等待断板") +
+      (currentNode && currentNode.midAlive.length ? " · 中位剩" + currentNode.midAlive.length + "只" : "") +
       '</small></div>' +
     '<div class="relay-step ' + (heightRows.length ? "done" : "muted") +
       '"><span>02 · 当前接力身位</span><b>' + esc(heightText) +
       '</b><small>先看市场最高板，再看下方节点候选</small></div>' +
     '<div class="relay-step ' + (nodeTicketRows.length ? "done" : "muted") +
       '"><span>03 · 今日节点票（2板）</span><b>' + esc(nodeTicketText) +
-      '</b><small>' + (view.breakAge !== null && view.breakAge >= 4 ? "新周期节点票" : "补涨节点票") +
+      '</b><small>' + (currentNode && currentNode.offset >= 3 ? "新周期节点票" : "补涨节点票") +
       '，与接力身位分开</small></div>' +
     '<div class="relay-step ' + (view.diffusion.length ? "done" : "muted") +
       '"><span>04 · 题材扩散</span><b>' + esc(diffText) + '</b><small>与当前接力候选：' +
       esc(candText) + '</small></div>' +
-    '<div class="relay-step ' + (view.node.cls || "muted") +
-      '"><span>05 · 新空间/穿越确认</span><b>' + esc(view.node.title) + '</b><small>' +
+    '<div class="relay-step ' + (currentNode && currentNode.midAlive.length ? "bad" : (view.node.cls || "muted")) +
+      '"><span>05 · 新空间/穿越确认</span><b>' + esc(currentNodeTitle) + '</b><small>' +
       esc(crossText) + '</small></div>';
-  conclusion.className = "relay-conclusion " + view.node.cls;
-  conclusion.innerHTML = '<b>' + esc(view.node.title) + '</b><br>' + esc(view.node.text) +
+  conclusion.className = "relay-conclusion " + (currentNode && currentNode.midAlive.length ? "bad" : view.node.cls);
+  conclusion.innerHTML = '<b>' + esc(currentNodeTitle) + '</b><br>' +
+    esc(currentNode ? currentNode.gateText : view.node.text) +
     '<br><b>断板案例：</b>' + esc(caseView
       ? caseView.kind + "；" + (caseView.reversal
         ? "龙头断板后反包"
@@ -7106,8 +7213,8 @@ function renderLeaderRelay() {
   if (hint) {
     const names = view.candidates.slice(0, 4);
     hint.innerHTML =
-      '<div class="relay-auction-card"><div class="relay-auction-head"><b>龙头接力 · ' +
-      esc(view.node.title) + '</b><span>' + esc(view.source || "当日连板历史") +
+      '<div class="relay-auction-card"><div class="relay-auction-head"><b>当前断板节点 · ' +
+      esc(currentNodeTitle) + '</b><span>' + esc(view.source || "当日连板历史") +
       ' · ' + esc(view.today) + '</span></div>' +
       relayCaseHtml(caseView) +
       '<div class="relay-case-line"><b>当前接力身位：</b>' + esc(heightText) + '</div>' +
@@ -7116,10 +7223,11 @@ function renderLeaderRelay() {
       (names.length
         ? names.map(x => '<span class="tag ' + (x.priority >= 3 ? "rec" : "ok") + '">' +
             esc(x.name + " · " + x.role.replace("候选", "") + " · " + x.lb + "板") + '</span>').join("")
-        : '<span class="tag ' + (view.oldBroken ? "bad" : "") + '">' + esc(view.node.title) + '</span>') +
-      '</div><div class="relay-auction-note">' + esc(view.node.text) +
-      ' ' + esc(crossText) + '。只作接力观察，不改现有打板评分。</div></div>' +
-      nodeExecutionHtml();
+        : '<span class="tag ' + (currentNode && currentNode.midAlive.length ? "bad" : "") + '">' +
+          esc(currentNodeTitle) + '</span>') +
+      '</div><div class="relay-auction-note">' +
+      esc(currentNode ? currentNode.gateText : view.node.text) +
+      ' ' + esc(crossText) + '。只作接力观察，不改现有打板评分。</div></div>';
   }
 }
 
