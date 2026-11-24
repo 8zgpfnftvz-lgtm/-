@@ -2266,6 +2266,78 @@ tbody tr:hover td .lnk{text-decoration:underline}
     };
   }
 
+  function buildRuntimeLimitHistory(poolDates, pools, dt) {
+    var base = window.__LIMIT_HISTORY__ || { dates: [], runs: [] };
+    var dateSet = {};
+    (base.dates || []).forEach(function (d) { dateSet[d] = 1; });
+    (poolDates || []).forEach(function (d) { dateSet[d] = 1; });
+    var dates = Object.keys(dateSet).sort();
+    var pos = {};
+    dates.forEach(function (d, i) { pos[d] = i; });
+    var hits = {};
+    function addHit(sym, day, name, bk, lb, theme, reason, concepts) {
+      if (!sym || pos[day] === undefined) return;
+      var h = hits[sym] || (hits[sym] = { name: name || sym, bk: bk || "", days: {} });
+      var old = h.days[day];
+      if (!old || Number(lb || 1) > Number(old.lb || 1)) {
+        h.days[day] = {
+          lb: Number(lb || 1), theme: theme || bk || "",
+          reason: reason || "", concepts: concepts || ""
+        };
+      }
+      h.name = name || h.name;
+      h.bk = bk || h.bk;
+    }
+    (base.runs || []).forEach(function (run) {
+      var a = pos[run[3]], b = pos[run[4]];
+      if (a === undefined || b === undefined) return;
+      for (var i = a; i <= b; i++) {
+        addHit(run[0], dates[i], run[1], run[2], Math.min(Number(run[5] || 1), i - a + 1),
+          run[6], run[7], run[9]);
+      }
+    });
+    var themeMap = (window.__KPL_THEMES__ && window.__KPL_THEMES__.stocks) || {};
+    (poolDates || []).forEach(function (day) {
+      ((pools[day] || {}).zt || []).forEach(function (x) {
+        var sym = E.symOf(x.c, x.m);
+        if (!sym.startsWith("sh6") && !sym.startsWith("sz0") && !sym.startsWith("sz2") &&
+            !sym.startsWith("sz3") && !sym.startsWith("sh68")) return;
+        var meta = themeMap[sym] || {};
+        addHit(sym, day, x.n, x.hybk, x.lbc || 1,
+          meta.theme || x.hybk || "", meta.reason || "", meta.concepts || "");
+      });
+    });
+    var runs = [];
+    Object.keys(hits).forEach(function (sym) {
+      var h = hits[sym];
+      var days = Object.keys(h.days).map(function (d) { return pos[d]; }).sort(function (a, b) { return a - b; });
+      var start = null, prev = null, members = [];
+      function flush() {
+        if (start === null || !members.length) return;
+        var maxLb = members.reduce(function (m, x) { return Math.max(m, Number(x.lb || 1)); }, 0);
+        if (maxLb >= 3) {
+          var best = members.slice().sort(function (a, b) { return Number(b.lb || 1) - Number(a.lb || 1); })[0] || {};
+          runs.push([
+            sym, h.name, h.bk, dates[start], dates[prev], maxLb,
+            best.theme || h.bk || "", best.reason || "", dates[prev], best.concepts || ""
+          ]);
+        }
+        start = null; prev = null; members = [];
+      }
+      days.forEach(function (idx) {
+        if (prev !== null && idx !== prev + 1) flush();
+        if (start === null) start = idx;
+        prev = idx;
+        members.push(h.days[dates[idx]]);
+      });
+      flush();
+    });
+    runs.sort(function (a, b) {
+      return String(a[3]).localeCompare(String(b[3])) || String(a[0]).localeCompare(String(b[0]));
+    });
+    return { date: dt, dates: dates, runs: runs };
+  }
+
   function buildCycle(emotion, lmap, poolDates, pools, dt, phase) {
     var last = emotion.length ? emotion[emotion.length - 1] : {};
     var leaders = Object.keys(lmap || {}).map(function (k) { return lmap[k]; });
@@ -3353,6 +3425,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
         var cycle = buildCycle(emotion, lmap, ctx.poolDates, ctx.pools, ctx.dt, phase);
         var ladder = buildLadder(ctx.poolDates, ctx.pools, ctx.dt);
         var limitLifecycle = buildLimitLifecycle(ctx.poolDates, ctx.pools, ctx.dt, 15);
+        ctx.limitHistory = buildRuntimeLimitHistory(ctx.poolDates, ctx.pools, ctx.dt);
         var m2 = buildMode2(ctx.poolDates, ctx.pools, ctx.snap, ctx.kl);
         var monitor = [];
         ((ctx.pools[ctx.dt] || {}).zt || []).forEach(function (x) {
@@ -3508,7 +3581,7 @@ tbody tr:hover td .lnk{text-decoration:underline}
           cycle: cycle,
           ladder: ladder,
           limit_lifecycle: limitLifecycle,
-          limit_history: window.__LIMIT_HISTORY__ || null,
+          limit_history: ctx.limitHistory || window.__LIMIT_HISTORY__ || null,
           market: market,
           mode2: m2.mode2,
           mode2_pending: m2.pending,
@@ -4716,7 +4789,21 @@ async function loadAuction() {
     AUC.busy = false;
     return;
   }
-  const rows = auctionRowsFromQuotes(pool, quotes);
+  const _loadClock = new Date();
+  const _loadMin = _loadClock.getHours() * 60 + _loadClock.getMinutes() +
+    _loadClock.getSeconds() / 60;
+  const useOpenAsAuction = _loadMin >= 9 * 60 + 30;
+  const auctionQuotes = {};
+  Object.keys(quotes || {}).forEach(sym => {
+    const q = quotes[sym] || {};
+    auctionQuotes[sym] = useOpenAsAuction && q.open
+      ? Object.assign({}, q, { close: q.open })
+      : q;
+  });
+  AUC.lockedAuction = useOpenAsAuction;
+  meta.textContent = "锚定池 " + pool.date + " · " + pool.items.length + " 只 · " +
+    aucClockText() + (useOpenAsAuction ? " · 已锁定开盘竞价价" : " · 盘中竞价实时值");
+  const rows = auctionRowsFromQuotes(pool, auctionQuotes);
   /* 情绪结论只由自动维护的高位锚定池 + 手动补充池的 9:25 反馈共同决定 */
   const list = ancCurrentList();
   // 9:25 窗口内抓一次并锁定；之后一律用这份快照判定，不再随盘中变化
@@ -4725,7 +4812,7 @@ async function loadAuction() {
   if (_mm >= 564.7 && _mm <= 566.5) {
     const snapData = {};
     list.forEach(L => {
-      const q = quotes[L.symbol];
+      const q = auctionQuotes[L.symbol];
       if (q && q.preClose) snapData[L.symbol] = { pre: q.preClose, close: q.close || q.preClose };
     });
     if (Object.keys(snapData).length) ancSnapSave(snapData);
@@ -4734,18 +4821,18 @@ async function loadAuction() {
   const qForAnc = {};
   list.forEach(L => {
     const s = snap && snap.data[L.symbol];
-    qForAnc[L.symbol] = s ? { preClose: s.pre, close: s.close } : (quotes[L.symbol] || null);
+    qForAnc[L.symbol] = s ? { preClose: s.pre, close: s.close } : (auctionQuotes[L.symbol] || null);
   });
   const ANC = buildAucAnchors(pool, qForAnc, list);
   AUC.ancSnap = snap ? snap.ts : null;
   // 今天有反馈的都算：涨停/断板/炸板/跌停，以及未涨停但竞价有数据的（按回调修复判定）
   const dec = aucDecision(ANC, !!snap);
-  const t = (quotes[rows.length ? rows[0].symbol : ""] || {}).time || "";
+  const t = (auctionQuotes[rows.length ? rows[0].symbol : ""] || {}).time || "";
   const tTxt = t ? (t.slice(0, 4) + "-" + t.slice(4, 6) + "-" + t.slice(6, 8) + " " +
     t.slice(8, 10) + ":" + t.slice(10, 12)) : "-";
   const clock = aucClockText();
   const cyc = DATA && DATA.cycle ? DATA.cycle : {};
-  const risk = auctionRiskHint(quotes, dec);
+  const risk = auctionRiskHint(auctionQuotes, dec);
   const midSummary = cycleMidSummary();
   cardBox.innerHTML =
     card("情绪锚定判定", dec.verdict, "锚定池 " + ANC.length + " 只；今日反馈 " + dec.total +
@@ -4798,6 +4885,7 @@ async function loadAuction() {
   const playable = picks.filter(p => p.score >= REC_MIN);
   const recRank = {};
   if (playable[0]) recRank[playable[0].symbol] = 1;
+  const execCandidate = playable[0] && !playable[0].yizi ? playable[0] : null;
   const watchRank = {};
   playable.slice(1, 3).forEach((p, i) => { watchRank[p.symbol] = i + 2; });
   // 高度板（3板及以上）就算分数没到 7，也单独标出来观察：3进4/4进5/6板以上不能被漏掉
@@ -4829,7 +4917,9 @@ async function loadAuction() {
     { key: "symbol", label: "代码", left: true },
     { key: "name", label: "名称", left: true, render: r =>
         (recRank[r.symbol]
-          ? '<span class="tag rec">★ 执行候选（第1名）</span> '
+          ? '<span class="tag rec">' +
+            (execCandidate && execCandidate.symbol === r.symbol
+              ? "★ 执行候选（第1名）" : "★ 强度第一 · 一字不追") + "</span> "
           : (watchRank[r.symbol]
             ? '<span class="tag">第' + watchRank[r.symbol] + '名 · 只观察</span> '
           : (hiRank[r.symbol]
@@ -4876,12 +4966,15 @@ async function loadAuction() {
       "参考：近半年按 7 分门槛只打首选，胜率 57.3%、均值 +0.60%；不到门槛的样本平均是负的。";
   } else {
     const a = playable[0], watch = playable.slice(1, 3);
-    note.innerHTML = "<b>执行口径：只优先第1名；第2、3名只观察，不自动进入执行清单。</b> " +
-      "第1名也只是候选，9:25确认后才能执行：<b>★" + esc(a.name) + "</b>（" + a.lb + "板·" +
-      esc(a.bk) + "，" + a.lv + " " + pct(a.pctv, 2) + "，" + a.score + " 分）打板价 <b>" + num(a.hit) + "</b>、止损 " +
-      num(a.stop) + (watch.length ? "；只观察 " + watch.map((p, i) =>
-        "第" + (i + 2) + "名 " + esc(p.name) + " " + num(p.hit)).join("、") : "") +
-      "。<br>只在<b>封板前挂涨停价排队</b>，收盘没封住次日不管盈亏都走，封住后次日冲高 +3~5% 也走。" +
+    note.innerHTML = "<b>执行口径：只优先非一字第1名；第2、3名只观察，不自动进入执行清单。</b> " +
+      "排序第一：<b>★" + esc(a.name) + "</b>（" + a.lb + "板·" +
+      esc(a.bk) + "，" + a.lv + " " + pct(a.pctv, 2) + "，" + a.score + " 分）" +
+      (a.yizi
+        ? "是<b>一字板，按手册只观察不追</b>，不自动送入执行清单；必须等开板换手、承接和回封确认。"
+        : "，打板价 <b>" + num(a.hit) + "</b>、止损 " + num(a.stop) + "。") +
+      (watch.length ? " 只观察 " + watch.map((p, i) =>
+        "第" + (i + 2) + "名 " + esc(p.name) + " " + num(p.hit)).join("、") + "。" : "") +
+      "<br>非一字候选只在<b>封板前挂涨停价排队</b>，收盘没封住次日不管盈亏都走，封住后次日冲高 +3~5% 也走。" +
       "门槛 " + REC_MIN + " 分（≈3板以上＋竞价超预期＋题材有跟风）。参考：近半年按 7 分门槛只打首选，胜率 57.3%、均值 +0.60%。";
   }
   if (hiPicks.length) {
@@ -4907,9 +5000,7 @@ async function loadAuction() {
   // 只在竞价时段（9:15–9:35）生成/更新今日执行清单，避免盘中/盘后用收盘价覆盖
   const _n = new Date(), _m = _n.getHours() * 60 + _n.getMinutes();
   if (AUC.forcePlan || (_m >= 555 && _m <= 575)) {
-    if (playable[0]) {
-      try { saveExecPlan([playable[0]]); } catch (e) { }
-    }
+    try { saveExecPlan(execCandidate ? [execCandidate] : []); } catch (e) { }
   }
   AUC.busy = false;
 }
