@@ -5055,6 +5055,17 @@ function cyclePoolRows(items) {
 }
 
 function cycleMidSummary(items) {
+  const latestNode = typeof currentBreakNodeView === "function" ? currentBreakNodeView(items) : null;
+  if (latestNode) {
+    const leaders = (latestNode.leaders || [latestNode.leader])
+      .filter(Boolean).map(x => x.name + x.lb + "板").join("、");
+    const mids = latestNode.midAlive.length
+      ? "中位未出清（" + latestNode.midAlive.map(x => x.name).join("、") + "仍连板）"
+      : (latestNode.clearOffset !== null && latestNode.clearOffset <= 2
+        ? "中位快速出清" : "旧周期中位已出清");
+    return leaders + " · " + latestNode.stage + " · " + mids +
+      " · 当前最高" + latestNode.currentMax + "板";
+  }
   const cyc = (DATA && DATA.cycle) || {};
   const breakAge = cyc.break_age === null || cyc.break_age === undefined
     ? null : Number(cyc.break_age);
@@ -5116,13 +5127,17 @@ function cycleCardSub(summary) {
 
 let CYCLE_LIVE_BUSY = false;
 let CYCLE_LIVE_LAST = "";
-function renderCycleLive(text, tone) {
+function renderCycleLive(text, tone, items) {
   const cls = tone === "ok" ? "up" : tone === "bad" ? "down" : "";
   const reviewText = '<b class="' + cls + '">' + esc(text) + '</b>';
   const auctionSub = $("#aucCycleSub");
   if (auctionSub) auctionSub.innerHTML = cycleCardSub(text);
   const review = $("#reviewMidClear");
   if (review) review.innerHTML = reviewText;
+  if (items && $("#tab-auction") && !$("#tab-auction").hidden) {
+    const hint = $("#relayAuctionHint");
+    if (hint) hint.innerHTML = currentBreakNodeHtml(items);
+  }
 }
 async function refreshCycleLive() {
   if (CYCLE_LIVE_BUSY || !DATA || !DATA.cycle || !window.__PHONE_ENGINE__) return;
@@ -5132,7 +5147,7 @@ async function refreshCycleLive() {
     renderCycleLive(cycleMidSummary(), "");
     return;
   }
-  if (DATA.meta.date !== snapToday()) {
+  if (DATA.meta.date !== snapToday() && hhmm < 925) {
     renderCycleLive("页面数据基准日为 " + DATA.meta.date + "，当前交易日尚未完整更新", "bad");
     return;
   }
@@ -5158,7 +5173,7 @@ async function refreshCycleLive() {
       now.toLocaleTimeString("zh-CN", { hour12: false }).slice(0, 5) + "实时 · 未收盘不最终确认";
     DATA.cycle.live_mid_text = text;
     CYCLE_LIVE_LAST = text;
-    renderCycleLive(text, members.some(m => sealed.has(m.symbol)) ? "" : "ok");
+    renderCycleLive(text, members.some(m => sealed.has(m.symbol)) ? "" : "ok", zt);
   } catch (e) {
     renderCycleLive("盘中状态更新失败，保留" +
       (CYCLE_LIVE_LAST ? "上次 " + CYCLE_LIVE_LAST : cycleMidSummary()), "bad");
@@ -7012,7 +7027,7 @@ function relayCaseHtml(c) {
     '</div>';
 }
 
-function currentBreakNodeView() {
+function currentBreakNodeView(items) {
   const c = relayBreakCaseView({});
   if (!c) return null;
   const hist = DATA && DATA.limit_history;
@@ -7024,13 +7039,15 @@ function currentBreakNodeView() {
   dates.forEach((d, i) => { pos[d] = i; });
   const offset = pos[today] !== undefined && pos[c.breakDate] !== undefined
     ? pos[today] - pos[c.breakDate] : 0;
-  const zt = ((DATA.anchor && DATA.anchor.pool) || []).filter(x => x.group === "涨停");
+  const zt = cyclePoolRows(items || ((DATA.anchor && DATA.anchor.pool) || []));
   const currentMax = zt.reduce((m, x) => Math.max(m, Number(x.lbc || 1)), 0);
   const heightRows = zt.filter(x => Number(x.lbc || 1) === currentMax)
     .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999));
   const nodeTickets = zt.filter(x => Number(x.lbc || 1) === 2)
     .sort((a, b) => (a.fbt || 999999) - (b.fbt || 999999));
-  const midAlive = (c.mids || []).filter(x => x.active);
+  const nowBySym = {};
+  zt.forEach(x => { nowBySym[x.symbol] = 1; });
+  const midAlive = (c.mids || []).filter(x => nowBySym[x.symbol]);
   const stage = offset <= 0 ? "首阴第1天" : "首阴第" + (offset + 1) + "天";
   const highBlocked = offset <= 2 && midAlive.length > 0;
   return Object.assign({}, c, {
@@ -7041,13 +7058,15 @@ function currentBreakNodeView() {
   });
 }
 
-function currentBreakNodeHtml() {
-  const v = currentBreakNodeView();
+function currentBreakNodeHtml(items) {
+  const v = currentBreakNodeView(items);
   if (!v) return "";
   const leaders = (v.leaders || [v.leader]).filter(Boolean);
+  const aliveSet = {};
+  (v.midAlive || []).forEach(x => { aliveSet[x.symbol] = 1; });
   const mids = v.mids.length
     ? v.mids.map(x => esc(x.name) + x.lb + "板" +
-        (x.active ? "（仍在连板）" : (x.break_date ? "（" + esc(x.break_date.slice(5)) + "断）" : ""))).join("、")
+        (aliveSet[x.symbol] ? "（仍在连板）" : (x.break_date ? "（" + esc(x.break_date.slice(5)) + "断）" : ""))).join("、")
     : "断板日无3/4板中位样本";
   const heights = v.heightRows.length
     ? v.heightRows.map(x => esc(x.name) + (x.lbc || 1) + "板" + (x.yizi ? "（一字）" : "")).join("、")
