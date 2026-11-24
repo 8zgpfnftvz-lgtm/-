@@ -5508,7 +5508,7 @@ function firstBoardQuality(r, allFirst) {
 }
 
 /* ---------- 同花顺大盘成交额 ---------- */
-const THS_TURNOVER_KEY = "marketTurnoverV2";
+const THS_TURNOVER_KEY = "marketTurnoverV3";
 let _thsTurnoverBusy = false;
 
 function turnoverText(v) {
@@ -5571,9 +5571,13 @@ async function thsRealHeadAmount(code) {
   const a = text.indexOf("("), b = text.lastIndexOf(")");
   if (a < 0 || b <= a) throw new Error("同花顺实时数据格式异常");
   const payload = JSON.parse(text.slice(a + 1, b));
-  const amount = Number(payload && payload.items && payload.items["19"]);
+  const items = (payload && payload.items) || {};
+  const amount = Number(items["19"]);
   if (!amount) throw new Error("同花顺实时成交额为空");
-  return { amount, day: String(payload.today || "") };
+  const stamp = String(items.updateTime || items.time || "");
+  const hit = stamp.match(/\d{4}-\d{2}-\d{2}/);
+  const day = hit ? hit[0].replace(/-/g, "") : "";
+  return { amount, day };
 }
 
 async function loadMarketTurnover() {
@@ -6620,85 +6624,100 @@ function nodeExecutionHtml() {
 
 function relayBreakCaseView(view) {
   const hist = DATA && DATA.limit_history;
-  const leader = view && view.anchor;
-  if (!hist || !leader || Number(leader.lb || 0) < 5 ||
-      !view.marketNode || !view.oldBroken ||
-      !Array.isArray(hist.dates) || !Array.isArray(hist.runs)) return null;
-  const dates = hist.dates;
+  if (!hist || !view || !Array.isArray(hist.dates) || !Array.isArray(hist.runs)) return null;
+  const dates = hist.dates.slice();
+  const today = DATA && DATA.meta && DATA.meta.date;
+  if (today && dates.indexOf(today) < 0) {
+    const emo = (DATA.emotion || []).map(x => x && x.date).filter(Boolean);
+    const prevTrade = emo.length >= 2 ? emo[emo.length - 2] : "";
+    if (prevTrade && dates[dates.length - 1] === prevTrade) dates.push(today);
+  }
+  const nd = dates.length;
   const pos = {};
   dates.forEach((d, i) => { pos[d] = i; });
-  const leaderEnd = leader.date;
-  const leaderEndIdx = pos[leaderEnd];
-  if (leaderEndIdx === undefined) return null;
-  const breakDate = dates[leaderEndIdx + 1] || "";
-  if (!breakDate) return null;
-  const breakIdx = breakDate ? pos[breakDate] : leaderEndIdx;
-  const runFor = sym => hist.runs.filter(r => r && r[0] === sym);
-  const activeSyms = {};
-  (view.midAlive || []).forEach(x => { activeSyms[x.symbol] = 1; });
-  const mids = (view.prevMidRows || []).map(m => {
-    const runs = runFor(m.symbol);
-    const maxRun = runs.slice().sort((a, b) => Number(b[5] || 0) - Number(a[5] || 0))[0];
-    const lastIdx = pos[m.last_limit_date];
-    const active = !!activeSyms[m.symbol];
-    const actualBreak = active ? "" : (lastIdx !== undefined ? dates[lastIdx + 1] || "" : "");
-    const clearOffset = actualBreak && pos[actualBreak] !== undefined
-      ? pos[actualBreak] - breakIdx : null;
-    return {
-      symbol: m.symbol, name: m.name, lb: Number(m.lb || 0),
-      last_limit_date: m.last_limit_date,
-      break_date: actualBreak, clear_offset: clearOffset,
-      active: active, final_lb: maxRun ? Number(maxRun[5] || 0) : Number(m.lb || 0)
-    };
-  });
-  const clearOffsets = mids.map(m => m.clear_offset).filter(x => x !== null);
-  const clearOffset = clearOffsets.length ? Math.max(0, ...clearOffsets) : null;
-  const reversal = runFor(leader.symbol).filter(r => {
-    const start = pos[r[3]];
-    return start !== undefined && start > leaderEndIdx && start - leaderEndIdx <= 3;
-  }).sort((a, b) => String(a[3]).localeCompare(String(b[3])))[0] || null;
-  const transfer = mids.filter(m => m.final_lb > Number(leader.lb || 0))
-    .sort((a, b) => b.final_lb - a.final_lb)[0] || null;
-  const nodeRows = [];
-  const seenNodes = {};
-  for (let k = 0; k < 3; k++) {
-    const di = breakIdx + k;
-    const day = dates[di];
-    if (!day) continue;
-    hist.runs.forEach(r => {
-      if (Number(r[5] || 0) < 3 || r[0] === leader.symbol) return;
-      const a = pos[r[3]], b = pos[r[4]];
-      if (a === undefined || b === undefined || di < a || di > b) return;
-      if (di - a + 1 !== 2 || seenNodes[r[0]]) return;
-      seenNodes[r[0]] = 1;
-      nodeRows.push({ symbol: r[0], name: r[1], day: day, final_lb: Number(r[5] || 0) });
-    });
-  }
-  const dayMaxMap = {};
+  const byDay = Array.from({ length: nd }, () => []);
   hist.runs.forEach(r => {
-    const a = pos[r[3]], b = pos[r[4]], d = pos[breakDate];
-    if (a === undefined || b === undefined || d === undefined || d < a || d > b) return;
-    const lb = d - a + 1;
-    dayMaxMap[lb] = dayMaxMap[lb] || [];
-    dayMaxMap[lb].push(r[1]);
+    const a = pos[r[3]], b = pos[r[4]];
+    if (a === undefined || b === undefined) return;
+    for (let i = a; i <= b; i++) byDay[i].push({ run: r, lb: i - a + 1 });
   });
-  const dayMax = Object.keys(dayMaxMap).map(Number).sort((a, b) => b - a)[0] || 0;
-  let badge = "中位快速出清", tone = "done", kind = "中位快速出清";
-  if (reversal) {
-    badge = "断板后反包 · 退潮延后"; tone = "bad"; kind = "断板反包";
-  } else if (transfer) {
-    badge = "中位突破前高 · 节点转移"; tone = "wait"; kind = "节点转移";
-  } else if (mids.some(m => m.active)) {
-    badge = "中位未出清 · 仍在分歧"; tone = "wait"; kind = "中位未出清";
-  } else if (!mids.length) {
-    badge = "中位无样本 · 梯队断层"; tone = "muted"; kind = "中位无样本";
-  } else if (clearOffset === null || clearOffset > 3) {
-    badge = "中位未在3日内出清"; tone = "bad"; kind = "中位延迟出清";
-  }
-  return {
-    leader, leaderEnd, breakDate, dayMax, mids, clearOffset,
-    reversal: reversal ? reversal[3] : "", transfer, nodeRows, badge, tone, kind
-  };
+  const activeAt = (i, minLb) => (byDay[i] || []).filter(c => c.lb >= minLb);
+  const groups = {};
+  hist.runs.forEach(r => {
+    if (Number(r[5] || 0) < 5) return;
+    const end = pos[r[4]];
+    if (end === undefined || end + 1 >= nd) return;
+    (groups[end + 1] = groups[end + 1] || []).push(r);
+  });
+  let latest = null;
+  Object.keys(groups).map(Number).sort((a, b) => b - a).some(bi => {
+    const leaders = groups[bi].slice().sort((a, b) => Number(b[5] || 0) - Number(a[5] || 0));
+    const leader = leaders[0];
+    const leaderSyms = new Set(leaders.map(r => r[0]));
+    let otherMax = 0;
+    activeAt(bi, 1).forEach(c => {
+      if (!leaderSyms.has(c.run[0])) otherMax = Math.max(otherMax, c.lb);
+    });
+    if (otherMax >= Number(leader[5] || 0)) return false;
+    const breakDate = dates[bi];
+    const mids = activeAt(pos[leader[4]], 3)
+      .filter(c => !leaderSyms.has(c.run[0]) && c.lb >= 3 && c.lb <= 4)
+      .map(c => {
+        const br = pos[c.run[4]] + 1;
+        return {
+          symbol: c.run[0], name: c.run[1], lb: c.lb,
+          final_lb: Number(c.run[5] || c.lb),
+          last_limit_date: c.run[4],
+          break_date: br < nd ? dates[br] : "",
+          clear_offset: br < nd ? br - bi : null,
+          active: br >= nd
+        };
+      });
+    const clearOffsets = mids.map(m => m.clear_offset).filter(x => x !== null);
+    const clearOffset = clearOffsets.length ? Math.max(0, ...clearOffsets) : null;
+    const reversal = hist.runs.filter(r =>
+      r[0] === leader[0] && pos[r[3]] !== undefined &&
+      pos[r[3]] > bi && pos[r[3]] <= bi + 3
+    ).sort((a, b) => String(a[3]).localeCompare(String(b[3])))[0] || null;
+    const transfer = mids.filter(m => m.final_lb > Number(leader[5] || 0))
+      .sort((a, b) => b.final_lb - a.final_lb)[0] || null;
+    const nodeRows = [], seenNodes = {};
+    for (let k = 0; k < 3; k++) {
+      const di = bi + k, day = dates[di];
+      if (!day) continue;
+      hist.runs.forEach(r => {
+        if (Number(r[5] || 0) < 3 || r[0] === leader[0] || seenNodes[r[0]]) return;
+        const a = pos[r[3]], b = pos[r[4]];
+        if (a === undefined || b === undefined || di < a || di > b || di - a + 1 !== 2) return;
+        seenNodes[r[0]] = 1;
+        nodeRows.push({ symbol: r[0], name: r[1], day: day, final_lb: Number(r[5] || 0) });
+      });
+    }
+    const dayMax = activeAt(bi, 1).reduce((m, c) => Math.max(m, c.lb), 0);
+    let badge = "中位快速出清", tone = "done", kind = "中位快速出清";
+    if (reversal) {
+      badge = "断板后反包 · 退潮延后"; tone = "bad"; kind = "断板反包";
+    } else if (transfer) {
+      badge = "中位突破前高 · 节点转移"; tone = "wait"; kind = "节点转移";
+    } else if (mids.some(m => m.active)) {
+      badge = "中位未出清 · 仍在分歧"; tone = "wait"; kind = "中位未出清";
+    } else if (!mids.length) {
+      badge = "中位无样本 · 梯队断层"; tone = "muted"; kind = "中位无样本";
+    } else if (clearOffset === null || clearOffset > 3) {
+      badge = "中位未在3日内出清"; tone = "bad"; kind = "中位延迟出清";
+    }
+    latest = {
+      leader: {
+        symbol: leader[0], name: leader[1], theme: String(leader[6] || leader[2] || "其他"),
+        lb: Number(leader[5] || 0), date: leader[4]
+      },
+      leaderEnd: leader[4], breakDate, dayMax, mids, clearOffset,
+      reversal: reversal ? reversal[3] : "", transfer, nodeRows, badge, tone, kind
+    };
+    return true;
+  });
+  if (!latest) return null;
+  return latest;
 }
 
 function relayCaseHtml(c) {
