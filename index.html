@@ -378,6 +378,13 @@ tbody tr:hover td .lnk{text-decoration:underline}
 .relay-conclusion.wait{border-left:4px solid #f59e0b}
 .relay-conclusion.bad{border-left:4px solid var(--down)}
 .relay-conclusion.muted{border-left:4px solid var(--muted)}
+.relay-case-brief{margin-bottom:8px;padding:9px 11px;border:1px solid var(--border);border-radius:11px;
+  background:linear-gradient(145deg,var(--card),var(--soft));font-size:10.5px;line-height:1.55}
+.relay-case-title{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.relay-case-title b{font-size:12px;color:var(--fg)}
+.relay-case-line{margin-top:5px;color:var(--muted)}
+.relay-case-line b{color:var(--fg);font-weight:650}
+.relay-case-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
 .relay-note{margin-top:7px;color:var(--muted);font-size:9.5px;line-height:1.5}
 #relayAuctionHint{margin:10px 0}
 .relay-auction-card{border:1px solid var(--border);border-left:4px solid #f59e0b;border-radius:12px;
@@ -6293,7 +6300,7 @@ function leaderRelayView() {
   return {
     today, prev, prevMax, currentMax, oldBroken, oldFeedback,
     marketNode, prevMidRows, midAlive, midCleared,
-    source,
+    source, anchor: cycleDragon,
     iceThreeCount: zt.filter(x => Number(x.lbc || 1) === 3).length,
     candidates, diffusion, node
   };
@@ -6611,6 +6618,116 @@ function nodeExecutionHtml() {
     '</div>';
 }
 
+function relayBreakCaseView(view) {
+  const hist = DATA && DATA.limit_history;
+  const leader = view && view.anchor;
+  if (!hist || !leader || !Array.isArray(hist.dates) || !Array.isArray(hist.runs)) return null;
+  const dates = hist.dates;
+  const pos = {};
+  dates.forEach((d, i) => { pos[d] = i; });
+  const leaderEnd = leader.date;
+  const leaderEndIdx = pos[leaderEnd];
+  if (leaderEndIdx === undefined) return null;
+  const breakDate = dates[leaderEndIdx + 1] || "";
+  if (!breakDate) return null;
+  const breakIdx = breakDate ? pos[breakDate] : leaderEndIdx;
+  const runFor = sym => hist.runs.filter(r => r && r[0] === sym);
+  const activeSyms = {};
+  (view.midAlive || []).forEach(x => { activeSyms[x.symbol] = 1; });
+  const mids = (view.prevMidRows || []).map(m => {
+    const runs = runFor(m.symbol);
+    const maxRun = runs.slice().sort((a, b) => Number(b[5] || 0) - Number(a[5] || 0))[0];
+    const lastIdx = pos[m.last_limit_date];
+    const active = !!activeSyms[m.symbol];
+    const actualBreak = active ? "" : (lastIdx !== undefined ? dates[lastIdx + 1] || "" : "");
+    const clearOffset = actualBreak && pos[actualBreak] !== undefined
+      ? pos[actualBreak] - breakIdx : null;
+    return {
+      symbol: m.symbol, name: m.name, lb: Number(m.lb || 0),
+      last_limit_date: m.last_limit_date,
+      break_date: actualBreak, clear_offset: clearOffset,
+      active: active, final_lb: maxRun ? Number(maxRun[5] || 0) : Number(m.lb || 0)
+    };
+  });
+  const clearOffsets = mids.map(m => m.clear_offset).filter(x => x !== null);
+  const clearOffset = clearOffsets.length ? Math.max(0, ...clearOffsets) : null;
+  const reversal = runFor(leader.symbol).filter(r => {
+    const start = pos[r[3]];
+    return start !== undefined && start > leaderEndIdx && start - leaderEndIdx <= 3;
+  }).sort((a, b) => String(a[3]).localeCompare(String(b[3])))[0] || null;
+  const transfer = mids.filter(m => m.final_lb > Number(leader.lb || 0))
+    .sort((a, b) => b.final_lb - a.final_lb)[0] || null;
+  const nodeRows = [];
+  const seenNodes = {};
+  for (let k = 0; k < 3; k++) {
+    const di = breakIdx + k;
+    const day = dates[di];
+    if (!day) continue;
+    hist.runs.forEach(r => {
+      if (Number(r[5] || 0) < 3 || r[0] === leader.symbol) return;
+      const a = pos[r[3]], b = pos[r[4]];
+      if (a === undefined || b === undefined || di < a || di > b) return;
+      if (di - a + 1 !== 2 || seenNodes[r[0]]) return;
+      seenNodes[r[0]] = 1;
+      nodeRows.push({ symbol: r[0], name: r[1], day: day, final_lb: Number(r[5] || 0) });
+    });
+  }
+  const dayMaxMap = {};
+  hist.runs.forEach(r => {
+    const a = pos[r[3]], b = pos[r[4]], d = pos[breakDate];
+    if (a === undefined || b === undefined || d === undefined || d < a || d > b) return;
+    const lb = d - a + 1;
+    dayMaxMap[lb] = dayMaxMap[lb] || [];
+    dayMaxMap[lb].push(r[1]);
+  });
+  const dayMax = Object.keys(dayMaxMap).map(Number).sort((a, b) => b - a)[0] || 0;
+  let badge = "中位快速出清", tone = "done", kind = "中位快速出清";
+  if (reversal) {
+    badge = "断板后反包 · 退潮延后"; tone = "bad"; kind = "断板反包";
+  } else if (transfer) {
+    badge = "中位突破前高 · 节点转移"; tone = "wait"; kind = "节点转移";
+  } else if (mids.some(m => m.active)) {
+    badge = "中位未出清 · 仍在分歧"; tone = "wait"; kind = "中位未出清";
+  } else if (!mids.length) {
+    badge = "中位无样本 · 梯队断层"; tone = "muted"; kind = "中位无样本";
+  } else if (clearOffset === null || clearOffset > 3) {
+    badge = "中位未在3日内出清"; tone = "bad"; kind = "中位延迟出清";
+  }
+  return {
+    leader, leaderEnd, breakDate, dayMax, mids, clearOffset,
+    reversal: reversal ? reversal[3] : "", transfer, nodeRows, badge, tone, kind
+  };
+}
+
+function relayCaseHtml(c) {
+  if (!c) return "";
+  const midText = c.mids.length
+    ? c.mids.map(m => esc(m.name) + m.lb + "板" +
+        (m.active ? "（仍封）" : (m.break_date ? "（" + esc(m.break_date.slice(5)) + "断）" : ""))).join("、")
+    : "断板日没有3板、4板中位样本";
+  const nodeText = c.nodeRows.length
+    ? c.nodeRows.slice(0, 6).map(n => '<span class="tag">' + esc(n.name + " · " +
+        n.day.slice(5) + " · 2→" + n.final_lb + "板") + "</span>").join("")
+    : '<span class="tag">D～D+2 没有后来晋级3板以上的2板</span>';
+  const clearText = c.mids.some(m => m.active)
+    ? "中位仍未完全出清"
+    : (!c.mids.length ? "中位梯队断层" :
+      ("中位全部断板" + (c.clearOffset === null ? "" : "，最晚在D+" + c.clearOffset)));
+  return '<div class="relay-case-brief">' +
+    '<div class="relay-case-title"><b>断板案例 · ' + esc((c.leaderEnd || "").slice(5)) + ' ' +
+      esc(c.leader.name + c.leader.lb + "板") + ' → ' +
+      esc(c.breakDate ? c.breakDate.slice(5) : "-") + '断板</b>' +
+      '<span class="tag ' + (c.tone === "bad" ? "bad" : c.tone === "done" ? "ok" : "") + '">' +
+      esc(c.badge) + '</span></div>' +
+    '<div class="relay-case-line"><b>断板日高度：</b>最高' + c.dayMax + '板；' +
+      '<b>中位样本：</b>' + midText + '；' + esc(clearText) + '。</div>' +
+    '<div class="relay-case-line"><b>节点窗口：</b></div><div class="relay-case-chips">' + nodeText + '</div>' +
+    (c.reversal ? '<div class="relay-case-line"><b>反包：</b>' + esc(c.reversal) + ' 龙头再次涨停，退潮延后。</div>' : '') +
+    (c.transfer ? '<div class="relay-case-line"><b>节点转移：</b>' + esc(c.transfer.name) +
+      '最终到' + c.transfer.final_lb + '板，超过旧龙头。</div>' : '') +
+    '</div>';
+}
+
 function renderLeaderRelay() {
   const badge = $("#relayNodeBadge");
   const chain = $("#relayChain");
@@ -6659,6 +6776,7 @@ function renderLeaderRelay() {
     if (hint) hint.innerHTML = nodeExecutionHtml();
     return;
   }
+  const caseView = relayBreakCaseView(view);
   badge.textContent = view.node.title;
   badge.className = "review-badge " + (view.node.cls === "done" ? "green" : view.node.cls === "bad" ? "red" : "");
   const oldText = view.oldFeedback.length
@@ -6675,7 +6793,7 @@ function renderLeaderRelay() {
     ? ("穿越状态：" + cross.state + "；原高标" + cross.oldName + cross.oldMax +
        "板，断板后最高" + cross.postPeak + "板")
     : "尚无5板以上原高标断板，暂不判断穿越";
-  chain.innerHTML =
+  chain.innerHTML = relayCaseHtml(caseView) +
     '<div class="relay-step ' + (view.oldBroken ? "done" : "wait") + '"><span>01 · 旧龙反馈</span><b>' +
       esc(oldText) + '</b><small>' + (view.oldBroken ? "旧高度龙断板，节点开始" : "旧龙仍封，等待断板") +
       (view.prevMidRows.length ? " · " + (view.midCleared ? "中位已出清" : "中位剩" + view.midAlive.length + "只") : "") +
@@ -6689,6 +6807,12 @@ function renderLeaderRelay() {
       esc(crossText) + '</small></div>';
   conclusion.className = "relay-conclusion " + view.node.cls;
   conclusion.innerHTML = '<b>' + esc(view.node.title) + '</b><br>' + esc(view.node.text) +
+    '<br><b>断板案例：</b>' + esc(caseView
+      ? caseView.kind + "；" + (caseView.reversal
+        ? "龙头断板后反包"
+        : (caseView.mids.some(m => m.active) ? "中位仍有活口" :
+          (caseView.clearOffset === null ? "中位样本待确认" : "中位最晚在D+" + caseView.clearOffset + "退出")))
+      : "暂无完整案例") +
     '<br><b>穿越：</b>' + esc(crossText);
   const rows = view.candidates.map((x, i) => Object.assign({ rank: i + 1 }, x));
   table("t_relay_candidates", rows, [
@@ -6717,6 +6841,7 @@ function renderLeaderRelay() {
       '<div class="relay-auction-card"><div class="relay-auction-head"><b>龙头接力 · ' +
       esc(view.node.title) + '</b><span>' + esc(view.source || "当日连板历史") +
       ' · ' + esc(view.today) + '</span></div>' +
+      relayCaseHtml(caseView) +
       '<div class="relay-auction-names">' +
       (names.length
         ? names.map(x => '<span class="tag ' + (x.priority >= 3 ? "rec" : "ok") + '">' +
