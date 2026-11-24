@@ -5852,7 +5852,7 @@ function firstBoardQuality(r, allFirst) {
 }
 
 /* ---------- 同花顺大盘成交额 ---------- */
-const THS_TURNOVER_KEY = "marketTurnoverV3";
+const THS_TURNOVER_KEY = "marketTurnoverV4";
 let _thsTurnoverBusy = false;
 
 function turnoverText(v) {
@@ -5865,6 +5865,8 @@ function turnoverText(v) {
 function renderMarketTurnover(data) {
   const box = document.getElementById("mktTurnCard");
   if (!box || !data || !data.amount) return;
+  const shAmount = Number(data.shAmount || 0);
+  const szAmount = Number(data.szAmount || 0);
   const diff = Number(data.amount) - Number(data.prevAmount || 0);
   let sub = "较昨日基本持平", tone = "";
   if (diff > 0) { sub = "较昨日放量 " + turnoverText(diff); tone = "up"; }
@@ -5873,9 +5875,14 @@ function renderMarketTurnover(data) {
     hour12: false, hour: "2-digit", minute: "2-digit"
   }) : "";
   const source = data.source || "同花顺实时";
+  const split = shAmount && szAmount
+    ? '<div class="k">沪市 ' + turnoverText(shAmount) + ' + 深市 ' +
+      turnoverText(szAmount) + ' = 沪深合计</div>'
+    : "";
   box.innerHTML =
     '<div class="k">大盘成交额</div>' +
     '<div class="v ' + tone + '">' + turnoverText(data.amount) + '</div>' +
+    split +
     '<div class="k">' + sub + ' · ' + esc(data.day || "") + ' · ' +
       esc(source + (stamp ? " " + stamp : "")) + '</div>';
 }
@@ -5933,13 +5940,18 @@ async function loadMarketTurnover() {
   if (cached && cached.ts && Date.now() - cached.ts < 15 * 1000) return;
   _thsTurnoverBusy = true;
   try {
-    const safe = p => p.catch(() => null);
     const [sh, sz, shLive, szLive] = await Promise.all([
-      safe(thsIndexAmounts("1A0001")), safe(thsIndexAmounts("399106")),
-      safe(thsRealHeadAmount("1A0001")), safe(thsRealHeadAmount("399106"))
+      thsIndexAmounts("1A0001"), thsIndexAmounts("399106"),
+      thsRealHeadAmount("1A0001"), thsRealHeadAmount("399106")
     ]);
-    const amount = (shLive && shLive.amount || 0) + (szLive && szLive.amount || 0);
-    if (!amount) throw new Error("实时成交额为空");
+    if (!sh || !sz) throw new Error("沪深历史成交额不完整");
+    if (!shLive || !shLive.amount || !szLive || !szLive.amount) {
+      throw new Error("沪深实时成交额不完整");
+    }
+    if (!shLive.day || !szLive.day || shLive.day !== szLive.day) {
+      throw new Error("沪深实时成交额交易日不一致");
+    }
+    const amount = shLive.amount + szLive.amount;
     const common = Object.keys(sh || {}).filter(d => sz && sz[d]).sort();
     const todayCode = snapToday().replace(/-/g, "");
     const liveDay = (shLive && shLive.day) || (szLive && szLive.day) ||
@@ -5954,8 +5966,10 @@ async function loadMarketTurnover() {
     const data = {
       day: dayText, prevDay: prevText,
       amount: amount,
+      shAmount: shLive.amount,
+      szAmount: szLive.amount,
       prevAmount: prevAmount, ts: Date.now(),
-      source: "同花顺实时"
+      source: "同花顺实时 · 沪深合计"
     };
     try { localStorage.setItem(THS_TURNOVER_KEY, JSON.stringify(data)); } catch (e) { }
     renderMarketTurnover(data);
