@@ -6621,7 +6621,9 @@ function nodeExecutionHtml() {
 function relayBreakCaseView(view) {
   const hist = DATA && DATA.limit_history;
   const leader = view && view.anchor;
-  if (!hist || !leader || !Array.isArray(hist.dates) || !Array.isArray(hist.runs)) return null;
+  if (!hist || !leader || Number(leader.lb || 0) < 5 ||
+      !view.marketNode || !view.oldBroken ||
+      !Array.isArray(hist.dates) || !Array.isArray(hist.runs)) return null;
   const dates = hist.dates;
   const pos = {};
   dates.forEach((d, i) => { pos[d] = i; });
