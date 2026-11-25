@@ -405,12 +405,12 @@ tbody tr:hover td .lnk{text-decoration:underline}
 .current-case-lede{font-size:12.5px;line-height:1.7;margin:0 0 10px}
 .current-case-table-wrap{border:1px solid var(--border);border-radius:10px;overflow:auto;background:var(--card);
   -webkit-overflow-scrolling:touch;touch-action:pan-x pan-y}
-.current-case-table{width:100%;min-width:590px;border-collapse:collapse;font-size:11.5px}
-.current-case-table th{padding:7px 9px;text-align:left;color:var(--muted);font-size:10.5px;font-weight:600;
+.current-case-table{width:100%;min-width:590px;border-collapse:collapse;font-size:10.5px}
+.current-case-table th{padding:5px 7px;text-align:left;color:var(--muted);font-size:9.5px;font-weight:600;
   background:var(--soft);border-bottom:1px solid var(--border);white-space:nowrap}
-.current-case-table td{padding:8px 9px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.55}
+.current-case-table td{padding:5px 7px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.3}
 .current-case-table tr:last-child td{border-bottom:0}
-.current-case-theme{display:block;color:var(--accent2);font-size:10px;margin-top:2px}
+.current-case-theme{display:block;color:var(--accent2);font-size:9px;line-height:1.25;margin-top:1px}
 .current-case-height{font-weight:750;color:var(--up);white-space:nowrap}
 .current-case-date{white-space:nowrap}
 .current-case-conclusion{display:flex;align-items:flex-start;gap:8px;margin-top:10px;padding:8px 10px;
@@ -4111,11 +4111,60 @@ function defaultDir(col, rows) {
   return -1;
 }
 
+function rowChangePct(r) {
+  if (!r) return null;
+  const direct = [r.pct, r.today_pct, r.change_pct, r.chgPct, r.chg, r.zdp,
+    r._p && r._p.today_pct, r._p && r._p.zdp];
+  for (const value of direct) {
+    if (value === null || value === undefined || value === "") continue;
+    const n = typeof value === "string" ? parseFloat(value.replace("%", "")) : Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  const pre = Number(r.preClose || r.pre_close || r._p && r._p.pre_close);
+  const now = Number(r.price || r.close);
+  if (Number.isFinite(pre) && pre > 0 && Number.isFinite(now) && now > 0)
+    return (now / pre - 1) * 100;
+  return null;
+}
+
+function normalizeGainColumn(cols, opts) {
+  const list = cols.slice();
+  if (opts && opts.noAutoGain) return list;
+  let priceIdx = list.findIndex(c =>
+    /^(price|close)$/.test(String(c.key || "")) &&
+    /现价|最新价/.test(String(c.label || "")));
+  if (priceIdx < 0) return list;
+  const changePattern = /^(pct|today_pct|change_pct|chgPct|chg|zdp)$/;
+  const changeIdx = list.findIndex(c =>
+    changePattern.test(String(c.key || "")) ||
+    /^(涨幅|今日涨跌)$/.test(String(c.label || "")));
+  let gain = null;
+  if (changeIdx >= 0) {
+    gain = Object.assign({}, list.splice(changeIdx, 1)[0], { label: "涨幅" });
+  }
+  priceIdx = list.findIndex(c =>
+    /^(price|close)$/.test(String(c.key || "")) &&
+    /现价|最新价/.test(String(c.label || "")));
+  if (!gain) {
+    gain = {
+      key: "__day_gain", label: "涨幅", num: true, sortable: false,
+      cls: r => cls(rowChangePct(r)),
+      render: r => {
+        const v = rowChangePct(r);
+        return v === null || v === undefined ? "—" : pct(v, 2);
+      }
+    };
+  }
+  list.splice(priceIdx + 1, 0, gain);
+  return list;
+}
+
 function table(id, rows, cols, opts) {
   opts = opts || {};
   const box = document.getElementById(id);
   if (!box) return;
   box.classList.add("compact-tags");
+  cols = normalizeGainColumn(cols, opts);
   const q = (opts.filter || "").trim().toLowerCase();
   let data = rows;
   if (q) data = rows.filter(r => cols.map(c => r[c.key]).join(" ").toLowerCase().includes(q));
@@ -5097,10 +5146,39 @@ function auctionRowsFromQuotes(pool, quotes) {
       symbol: p.symbol, name: p.name || q.name, code: String(p.symbol).slice(2).toUpperCase(),
       kind: kind, kindLabel: AUC_RULES[kind].label, rule: AUC_RULES[kind].desc,
       pre: q.preClose, price: price, pctv: pctv, lv: aucJudge(kind, pctv),
+      change_pct: Number.isFinite(Number(q.pct)) ? Number(q.pct) : null,
       lb: p.lbc || 1, _p: p
     });
   });
   return rows;
+}
+
+function auctionPullbackRows(mode2, quotes) {
+  const out = [];
+  (mode2 || []).forEach(m => {
+    const q = quotes && quotes[m.symbol];
+    if (!m.symbol || !q || !q.preClose) return;
+    const price = q.close || q.preClose;
+    const gap = (price / q.preClose - 1) * 100;
+    if (gap < 0) return;
+    const quality = (m.pass ? 4 : 0) +
+      (m.above_ma5 ? 2 : 0) + (m.above_ma10 ? 2 : 0) +
+      (Number(m.cur_dd) <= 10 ? 2 : Number(m.cur_dd) <= 20 ? 1 : 0);
+    out.push({
+      symbol: m.symbol, name: m.name || q.name, code: String(m.symbol).slice(2).toUpperCase(),
+      kind: "回调修复", kindLabel: "连板回调",
+      rule: "回调修复：高开 ≥0% 超预期；低开0%～-3%符合；低于-3%不及",
+      pre: q.preClose, price, pctv: gap, lv: "超预期",
+      change_pct: Number.isFinite(Number(q.pct)) ? Number(q.pct) : null,
+      lb: Number(m.max_lb || m.lb || 0), row_type: "回调修复",
+      pullback: Number(m.cur_dd ?? m.dd ?? 0),
+      ma_state: m.above_ma5 && m.above_ma10 ? "站上MA5/10" : "均线待确认",
+      theme: marketThemeOf(m) || m.bk || "其他",
+      pb_score: quality + Math.min(5, gap), _pb: m,
+      _p: Object.assign({}, m, { group: "回调", today_pct: q.pct })
+    });
+  });
+  return out.sort((a, b) => b.pb_score - a.pb_score || b.pctv - a.pctv).slice(0, 5);
 }
 
 async function loadAuction() {
@@ -5130,7 +5208,9 @@ async function loadAuction() {
   let quotes = {};
   try {
     // 手动锚定池里的票也要报价（有些今天不在池子里）
-    const syms = pool.items.map(p => p.symbol).concat(ancCurrentList().map(l => l.symbol))
+    const syms = pool.items.map(p => p.symbol)
+      .concat(ancCurrentList().map(l => l.symbol))
+      .concat((DATA.mode2 || []).map(x => x.symbol))
       .filter((s, i, a) => a.indexOf(s) === i);
     if (PHONE) {
       quotes = await window.__PHONE_ENGINE__.quoteBatch(syms);
@@ -5226,7 +5306,6 @@ async function loadAuction() {
   const autoN = ANC.filter(x => x.source === "auto").length;
   const manualN = ANC.filter(x => x.source === "manual").length;
   // 竞价页只展示「超预期」名单；符合 / 不及预期只计数（在上面的断言卡里），不再逐只列出
-  const groups = [["超预期", rSup, "up"]];
   /* ---------- 分类涨停梯队：找"整体梯队完整"的题材 ---------- */
   const ladders = sectorLadders(pool.items);
   /* ---------- 最上面：情绪锚定池的竞价反馈（情绪结论就是从这里来的） ---------- */
@@ -5245,10 +5324,6 @@ async function loadAuction() {
     "<b>未涨停</b>按六篇手册的龙头反馈判断：高开 ≥0% 算超预期（弱转强/不被核）、-3%~0 符合、<-3% 不及预期；" +
     "10 日涨幅 ≥90% 的会标注异动监管。" +
     "</div>";
-  groups.forEach((g, i) => {
-    if (!g[1]) return;
-    html += "<h3>" + g[0] + "（" + g[1] + " 只）</h3><div class='panel'><table id='auc_t" + i + "'></table></div>";
-  });
   /* ---------- 打哪一个：直接在下面的表里标出来 ---------- */
   const picks = pickBoards(rows, ladders, pool.items);
   const pickFeedback = {};
@@ -5267,10 +5342,38 @@ async function loadAuction() {
     !recRank[p.symbol] && !watchRank[p.symbol]).slice(0, 3);
   const hiRank = {};
   hiPicks.forEach((p, i) => { hiRank[p.symbol] = i + 1; });
+  const qualifiedSymbols = new Set(playable.concat(hiPicks).map(p => p.symbol));
+  const candidateSuperRows = rows.filter(r => r.lv === "超预期" && qualifiedSymbols.has(r.symbol))
+    .map(r => Object.assign({}, r, { row_type: "打板候选" }));
+  const candidateSet = new Set(candidateSuperRows.map(r => r.symbol));
+  const anchorSet = new Set(ANC.map(r => r.symbol));
+  const pullbackSuperRows = auctionPullbackRows(DATA.mode2 || [], auctionQuotes)
+    .filter(r => !candidateSet.has(r.symbol) && !anchorSet.has(r.symbol));
+  pullbackSuperRows.forEach(r => {
+    const peers = rows.filter(x => x.symbol !== r.symbol &&
+      String(marketThemeOf(x._p) || "其他").trim() === r.theme);
+    const sup = peers.filter(x => x.lv === "超预期").length;
+    const ok = peers.filter(x => x.lv === "符合").length;
+    r.peer_feedback = peers.length ? "超" + sup + "/符" + ok : "无同题材样本";
+  });
+  const superRows = candidateSuperRows.concat(pullbackSuperRows);
+  const groups = [["超预期", superRows.length, "up"]];
+  groups.forEach((g, i) => {
+    if (!g[1]) return;
+    html += "<h3>超预期（打板候选" + candidateSuperRows.length + "只 + 回调修复" +
+      pullbackSuperRows.length + "只）</h3>" +
+      "<div class='k' style='margin:-4px 0 8px'>全池超预期共 " + rSup +
+      " 只；未进入打板候选的 " + Math.max(0, rSup - candidateSuperRows.length) +
+      " 只不展开。回调修复最多显示5只，不进入自动打板清单。</div>" +
+      "<div class='panel'><table id='auc_t" + i + "'></table></div>";
+  });
   html += "<div class='k' id='aucPickNote' style='margin:2px 0 12px'></div>";
   body.innerHTML = html;
   table("auc_anchor", ANC, [
     { key: "name", label: "锚定标的", left: true },
+    { key: "lv", label: "判定", left: true, render: r =>
+        '<span class="tag ' + (r.lv === "超预期" ? "ok" : r.lv === "不及预期" ? "bad" : "") + '">' + r.lv + "</span>" },
+    { key: "gap", label: "竞价高开", num: true, cls: r => cls(r.gap), render: r => r.gap === null ? "-" : pct(r.gap, 2) },
     { key: "price", label: "现价", num: true, sortable: true, render: r => num(r.price) },
     { key: "lb", label: "前期最高板", num: true, render: r => r.lb + " 板" },
     { key: "relay_hint", label: "节点提示", left: true, render: r => {
@@ -5281,9 +5384,6 @@ async function loadAuction() {
     { key: "drawdown", label: "距阶段高", num: true, render: r => r.drawdown === null ? "-" : pct(r.drawdown, 1) },
     { key: "state", label: "今日状态", left: true },
     { key: "rule", label: "次日预期（符合→超预期）", left: true },
-    { key: "gap", label: "竞价高开", num: true, cls: r => cls(r.gap), render: r => r.gap === null ? "-" : pct(r.gap, 2) },
-    { key: "lv", label: "判定", left: true, render: r =>
-        '<span class="tag ' + (r.lv === "超预期" ? "ok" : r.lv === "不及预期" ? "bad" : "") + '">' + r.lv + "</span>" },
     { key: "act", label: "", left: true, render: r =>
         '<button type="button" class="ancDel" data-src="' + esc(r.source) + '" data-sym="' + esc(r.symbol) + '">删</button>' },
   ], { sort: (a, b) => (b.lb || 0) - (a.lb || 0) });
@@ -5300,8 +5400,15 @@ async function loadAuction() {
           : (hiRank[r.symbol]
             ? '<span class="tag hi">高度板 · 观察</span> '
             : ""))) + esc(r.name || "") },
+    { key: "lv", label: "判定", left: true, render: r =>
+        '<span class="tag ' + (r.lv === "超预期" ? "ok" : r.lv === "不及预期" ? "bad" : "") + '">' + r.lv + "</span>" },
+    { key: "row_type", label: "类型", left: true, render: r =>
+        '<span class="tag ' + (r.row_type === "打板候选" ? "rec" : "hi") + '">' +
+          esc(r.row_type || "打板候选") + "</span>" },
     { key: "price", label: "现价", num: true, render: r => num(r.price) },
     { key: "pctv", label: "竞价涨幅", num: true, cls: r => cls(r.pctv), render: r => pct(r.pctv, 2) },
+    { key: "change_pct", label: "涨幅", num: true, cls: r => cls(r.change_pct),
+      render: r => r.change_pct === null || r.change_pct === undefined ? "—" : pct(r.change_pct, 2) },
     { key: "peer_feedback", label: "板块反馈", left: true, render: r => {
         const text = pickFeedback[r.symbol] || "无同题材样本";
         const bad = /弱([2-9]|\d{2,})/.test(text);
@@ -5317,20 +5424,21 @@ async function loadAuction() {
     { key: "kindLabel", label: "昨日类型", left: true },
     { key: "gene", label: "股性", num: true, sortable: true,
       sortVal: r => (geneOf(r.symbol) || [0])[0], render: r => geneTag(r.symbol) },
-    { key: "lv", label: "判定", left: true, render: r =>
-        '<span class="tag ' + (r.lv === "超预期" ? "ok" : r.lv === "不及预期" ? "bad" : "") + '">' + r.lv + "</span>" },
     { key: "rule", label: "标准", left: true, render: r => '<span class="k">' + esc(r.rule) + "</span>" },
   ];
   groups.forEach((g, i) => {
     if (!g[1]) return;
-    table("auc_t" + i, rows.filter(r => r.lv === g[0]), cols,
+    table("auc_t" + i, superRows, cols,
       { sort: (a, b) => {
+          const typeRank = r => r.row_type === "打板候选" ? 0 : 1;
           const rank = r => recRank[r.symbol] ? 0 :
             (watchRank[r.symbol] ? watchRank[r.symbol] :
               (hiRank[r.symbol] ? 100 + hiRank[r.symbol] : 999));
-          return (rank(a) - rank(b)) || (b.pctv - a.pctv);
+          return (typeRank(a) - typeRank(b)) ||
+            (a.row_type === "回调修复" ? ((b.pb_score || 0) - (a.pb_score || 0)) :
+              (rank(a) - rank(b))) || (b.pctv - a.pctv);
         },
-        rowCls: r => (recRank[r.symbol] ? "rec" : "") });
+        rowCls: r => (recRank[r.symbol] ? "rec" : ""), noAutoGain: true });
   });
   const note = $("#aucPickNote");
   if (!picks.length) {
@@ -6130,8 +6238,6 @@ function turnoverText(v) {
 function renderMarketTurnover(data) {
   const box = document.getElementById("mktTurnCard");
   if (!box || !data || !data.amount) return;
-  const shAmount = Number(data.shAmount || 0);
-  const szAmount = Number(data.szAmount || 0);
   const diff = Number(data.amount) - Number(data.prevAmount || 0);
   let sub = "较昨日基本持平", tone = "";
   if (diff > 0) { sub = "较昨日放量 " + turnoverText(diff); tone = "up"; }
@@ -6140,14 +6246,9 @@ function renderMarketTurnover(data) {
     hour12: false, hour: "2-digit", minute: "2-digit"
   }) : "";
   const source = data.source || "同花顺实时";
-  const split = shAmount && szAmount
-    ? '<div class="k">沪市 ' + turnoverText(shAmount) + ' + 深市 ' +
-      turnoverText(szAmount) + ' = 沪深合计</div>'
-    : "";
   box.innerHTML =
     '<div class="k">大盘成交额</div>' +
     '<div class="v ' + tone + '">' + turnoverText(data.amount) + '</div>' +
-    split +
     '<div class="k">' + sub + ' · ' + esc(data.day || "") + ' · ' +
       esc(source + (stamp ? " " + stamp : "")) + '</div>';
 }
@@ -6234,7 +6335,7 @@ async function loadMarketTurnover() {
       shAmount: shLive.amount,
       szAmount: szLive.amount,
       prevAmount: prevAmount, ts: Date.now(),
-      source: "同花顺实时 · 沪深合计"
+      source: "同花顺实时"
     };
     try { localStorage.setItem(THS_TURNOVER_KEY, JSON.stringify(data)); } catch (e) { }
     renderMarketTurnover(data);
