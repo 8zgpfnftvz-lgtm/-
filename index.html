@@ -5377,9 +5377,15 @@ async function loadAuction() {
   // 只在竞价时段（9:15–9:35）生成/更新今日执行清单，避免盘中/盘后用收盘价覆盖
   const _n = new Date(), _m = _n.getHours() * 60 + _n.getMinutes();
   if (AUC.forcePlan || (_m >= 555 && _m <= 575)) {
-    if (execCandidate) {
-      try { saveExecPlan([execCandidate]); } catch (e) { }
-    }
+    const source = (playable.length ? playable : picks).slice(0, 3);
+    const planRows = source.map((p, i) => Object.assign({}, p, {
+      node_blocked: blockedByNode,
+      exec_role: execCandidate && p.symbol === execCandidate.symbol
+        ? "执行第1名"
+        : (blockedByNode ? "观察·节点未过" :
+          (!playable.length ? "观察·评分未过" : "观察第" + (i + 1) + "名"))
+    }));
+    try { saveExecPlan(planRows); } catch (e) { }
   }
   AUC.busy = false;
 }
@@ -5694,7 +5700,8 @@ function saveExecPlan(items) {
     expect: p.expect || tradeExpectation(p),
     hit: p.hit, stop: p.stop, price: p.price || null, bk: p.bk, why: p.why || "",
     relay_role: relayRoles[p.symbol] || p.relay_role || "",
-    exec_role: "执行第1名"
+    exec_role: p.exec_role || "执行第1名",
+    node_blocked: !!p.node_blocked
   }));
   const automaticSymbols = new Set(automatic.map(x => x.symbol));
   const manual = (cur.items || []).filter(it =>
@@ -5730,6 +5737,13 @@ function execPlanVerdict(firstExec, rows, marketGate, cycleState, now) {
   const day = now.getDay();
   const mins = now.getHours() * 60 + now.getMinutes();
   if (!firstExec) return { verdict: "观察", reason: "当前没有候选清单" };
+  if (!/^执行/.test(firstExec.exec_role || "执行第1名")) {
+    return {
+      verdict: "只观察",
+      reason: firstExec.node_blocked ? "当前节点未通过，清单仅保留观察" :
+        (firstExec.exec_role || "当前候选仅观察")
+    };
+  }
 
   const scorePass = (firstExec.score || 0) >= REC_MIN;
   const statuses = (rows || []).map(r => tradeAuctionStatus(r));
@@ -5798,6 +5812,10 @@ function renderTrade() {
   }
   table("t_exec", erows, [
     { key: "name", label: "个股", left: true },
+    { key: "exec_role", label: "清单角色", left: true, render: r =>
+        '<span class="tag ' + (/^执行/.test(r.exec_role || "") ? "rec" :
+          /节点未过/.test(r.exec_role || "") ? "bad" : "") + '">' +
+          esc(r.exec_role || "执行第1名") + "</span>" },
     { key: "price", label: "现价", num: true, sortable: true, render: r => num(r.price) },
     { key: "lb", label: "板数", num: true, render: r => r.lb ? r.lb + " 板" : "-" },
     { key: "auc_pct", label: "竞价涨幅", num: true, sortable: true,
@@ -5831,7 +5849,10 @@ function renderTrade() {
     { key: "stop", label: "止损", num: true, render: r => num(r.stop) },
     { key: "st", label: "状态", left: true, render: r =>
         r.st === "buy" ? '<span class="tag ok">已买入</span>'
-          : r.st === "skip" ? '<span class="tag bad">放弃</span>' : '<span class="tag">待执行</span>' },
+          : r.st === "skip" ? '<span class="tag bad">放弃</span>'
+            : (/^执行/.test(r.exec_role || "执行第1名")
+              ? '<span class="tag">待执行</span>'
+              : '<span class="tag">只观察</span>') },
     { key: "act", label: "操作", left: true, render: r =>
         (r.st !== "buy" ? '<button type="button" class="exBuy" data-sym="' + esc(r.symbol) + '">已买入</button> ' : "") +
         (r.st !== "skip" ? '<button type="button" class="exSkip" data-sym="' + esc(r.symbol) + '">放弃</button> ' : "") +
