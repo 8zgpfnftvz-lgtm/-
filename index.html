@@ -4140,14 +4140,17 @@ function normalizeGainColumn(cols, opts) {
     /^(涨幅|今日涨跌)$/.test(String(c.label || "")));
   let gain = null;
   if (changeIdx >= 0) {
-    gain = Object.assign({}, list.splice(changeIdx, 1)[0], { label: "涨幅" });
+    gain = Object.assign({}, list.splice(changeIdx, 1)[0], {
+      label: "涨幅", sortable: true, sortVal: rowChangePct
+    });
   }
   priceIdx = list.findIndex(c =>
     /^(price|close)$/.test(String(c.key || "")) &&
     /现价|最新价/.test(String(c.label || "")));
   if (!gain) {
     gain = {
-      key: "__day_gain", label: "涨幅", num: true, sortable: false,
+      key: "__day_gain", label: "涨幅", num: true, sortable: true,
+      sortVal: rowChangePct,
       cls: r => cls(rowChangePct(r)),
       render: r => {
         const v = rowChangePct(r);
@@ -5407,7 +5410,8 @@ async function loadAuction() {
           esc(r.row_type || "打板候选") + "</span>" },
     { key: "price", label: "现价", num: true, render: r => num(r.price) },
     { key: "pctv", label: "竞价涨幅", num: true, cls: r => cls(r.pctv), render: r => pct(r.pctv, 2) },
-    { key: "change_pct", label: "涨幅", num: true, cls: r => cls(r.change_pct),
+    { key: "change_pct", label: "涨幅", num: true, sortable: true,
+      sortVal: r => r.change_pct, cls: r => cls(r.change_pct),
       render: r => r.change_pct === null || r.change_pct === undefined ? "—" : pct(r.change_pct, 2) },
     { key: "peer_feedback", label: "板块反馈", left: true, render: r => {
         const text = pickFeedback[r.symbol] || "无同题材样本";
