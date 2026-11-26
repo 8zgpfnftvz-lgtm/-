@@ -712,7 +712,7 @@ window.__ROLLOVER_SCAN__={"generated_at":"2026-11-26T14:15:40","data_date":"2026
     <div><div class="k">竞价锚定判断（按《淘股吧六篇龙头节点体系学习手册》的龙头反馈与节点规则）</div></div>
     <span class="k" id="aucMeta"></span>
     <button type="button" id="aucRefresh">立即刷新</button>
-    <button type="button" id="aucAuto" class="on">自动刷新 9:25 · 开</button>
+    <button type="button" id="aucAuto" class="on">自动刷新 · 开</button>
   </div>
   <div id="aucBody"></div>
 </section>
@@ -5170,6 +5170,13 @@ async function loadAuction() {
     qForAnc[L.symbol] = s ? { preClose: s.pre, close: s.close } : (auctionQuotes[L.symbol] || null);
   });
   const ANC = buildAucAnchors(pool, qForAnc, list);
+  ANC.forEach(r => {
+    const lq = quotes[r.symbol];
+    r.live_price = lq && lq.close ? lq.close : r.price;
+    r.live_pct = lq && lq.preClose
+      ? (isNum(lq.pct) ? Number(lq.pct) : (lq.close / lq.preClose - 1) * 100)
+      : null;
+  });
   AUC.ancSnap = snap ? snap.ts : null;
   // 今天有反馈的都算：涨停/断板/炸板/跌停，以及未涨停但竞价有数据的（按回调修复判定）
   const dec = aucDecision(ANC, !!snap);
@@ -5231,7 +5238,7 @@ async function loadAuction() {
     "<div class='panel'><table id='auc_anchor'></table></div>" +
     "<div class='k' style='margin:-4px 0 10px'>" +
     "自动主池：近期出现 <b>6板及以上</b> 的高位龙头，以及 <b>4板以上断板后仍在5/10/20日线上方趋势上行</b> 的标的；从阶段高点回撤超过 <b>30%</b> 自动剔除并补位，最多10只。<b>只有连续一字顶到6板以上的高标不纳入情绪判断，低位一字正常保留</b>。也可以输入代码手动补充，行末「删」当天移除。" +
-    "情绪判定只用 <b>9:25</b> 那一刻的竞价数据（抓到后锁定，盘中不再变）。" +
+    "<b>现价和涨幅随行情刷新；竞价高开、判定只用 9:25 那一刻的数据（抓到后锁定，盘中不再变）。</b>" +
     "超预期过半→情绪超预期；不及预期过半→情绪不及预期；其余→符合预期。" +
     "<b>未涨停</b>按六篇手册的龙头反馈判断：高开 ≥0% 算超预期（弱转强/不被核）、-3%~0 符合、<-3% 不及预期；" +
     "10 日涨幅 ≥90% 的会标注异动监管。" +
@@ -5286,7 +5293,10 @@ async function loadAuction() {
     { key: "lv", label: "判定", left: true, render: r =>
         '<span class="tag ' + (r.lv === "超预期" ? "ok" : r.lv === "不及预期" ? "bad" : "") + '">' + r.lv + "</span>" },
     { key: "gap", label: "竞价高开", num: true, cls: r => cls(r.gap), render: r => r.gap === null ? "-" : pct(r.gap, 2) },
-    { key: "price", label: "现价", num: true, sortable: true, render: r => num(r.price) },
+    { key: "price", label: "现价", num: true, sortable: true,
+      sortVal: r => r.live_price, render: r => num(r.live_price) },
+    { key: "live_pct", label: "涨幅", num: true, sortable: true,
+      cls: r => cls(r.live_pct), render: r => pct(r.live_pct, 2) },
     { key: "lb", label: "前期最高板", num: true, render: r => r.lb + " 板" },
     { key: "relay_hint", label: "节点提示", left: true, render: r => {
         const hs = relayHintTags(r.symbol, r);
@@ -5611,6 +5621,10 @@ function aucAutoTick() {
   var timers = targets.filter(t => t > now).map(function (t) {
     return setTimeout(scanAtOpen, t - now);
   });
+  // 交易时段约30秒刷新现价/涨幅；竞价高开和判定仍读取9:25锁定快照。
+  if (now.getDay() >= 1 && now.getDay() <= 5 && hhmm >= 925 && hhmm <= 1500) {
+    timers.push(setInterval(scanAtOpen, 30000));
+  }
   AUC.timer = timers.length ? timers : null;
   if (hhmm >= 924 && hhmm <= 930) {
     // 9:24后打开页面补扫一次；离开窗口不乱扫全市场。
@@ -10287,7 +10301,7 @@ $("#planNote").addEventListener("input", () => {
 $("#aucRefresh").addEventListener("click", loadAuction);
 $("#aucAuto").addEventListener("click", () => {
   AUC.auto = !AUC.auto;
-  $("#aucAuto").textContent = "自动刷新 9:25 · " + (AUC.auto ? "开" : "关");
+  $("#aucAuto").textContent = "自动刷新 · " + (AUC.auto ? "开" : "关");
   $("#aucAuto").classList.toggle("on", AUC.auto);
   aucAutoTick();
 });
@@ -10433,10 +10447,20 @@ $("#trFile").addEventListener("change", e => {
 });
 
 $("#execRefresh").addEventListener("click", async () => {
-  AUC.forcePlan = true;
-  await safeLoadAuction();
-  AUC.forcePlan = false;
+  try {
+    AUC.forcePlan = true;
+    await loadAuction();
+  } catch (e) {
+    $("#execInfo").textContent = "拉取失败：" + (e.message || e);
+  } finally {
+    AUC.forcePlan = false;
+  }
   renderTrade();
+  const ex = exLoad();
+  if (!ex.items.length) {
+    $("#execInfo").textContent =
+      "未生成清单：竞价池为空或行情获取失败，请查看竞价页提示";
+  }
 });
 
 /* 手动把想打的票加进今日清单 */
