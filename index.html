@@ -5174,7 +5174,8 @@ async function loadAuction() {
     const lq = quotes[r.symbol];
     r.live_price = lq && lq.close ? lq.close : r.price;
     r.live_pct = lq && lq.preClose
-      ? (isNum(lq.pct) ? Number(lq.pct) : (lq.close / lq.preClose - 1) * 100)
+      ? ((lq.pct !== null && lq.pct !== undefined && !isNaN(lq.pct))
+        ? Number(lq.pct) : (lq.close / lq.preClose - 1) * 100)
       : null;
   });
   AUC.ancSnap = snap ? snap.ts : null;
